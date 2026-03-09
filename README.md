@@ -1,167 +1,124 @@
-# 🧸 Tiny Toys Factory — Unity Project
+# 🧸 Tiny Toys Factory
 
-PRU213 Game Programming | Manufacture Simulation
+**Tiny Toys Factory** là một tựa game mô phỏng quản lý nhà máy sản xuất đồ chơi (Manufacture Simulation) được phát triển trên Unity 2D URP. Trong game, người chơi sẽ vào vai một quản đốc nhà máy, chịu trách nhiệm quản lý tài nguyên, tối ưu hóa dây chuyền sản xuất đa công đoạn (Lắp ráp & Sơn/Đóng gói), và xử lý các sự kiện ngẫu nhiên áp lực cao để hoàn thành các đơn hàng đúng hạn.
 
 ---
 
-## 📁 Project Structure
+## 🎮 Tính năng cốt lõi (Core Features)
 
-```
+- **Quản lý đa tài nguyên:** Cân đối giữa Vật liệu (Materials), Điện năng (Power) và Nhân công (Workers). Đảm bảo nhân công được nghỉ ngơi để tránh kiệt sức (Fatigue mechanic).
+- **Dây chuyền sản xuất thực tế:** Các sản phẩm trải qua quy trình sản xuất A (Lắp ráp - Assembly) và quy trình B (Sơn & Đóng gói - Paint & Pack).
+- **Hệ thống sự kiện ngẫu nhiên (Random Events):** Đối mặt với các sự kiện đòi hỏi xử lý nhanh như: Hỏng hóc máy móc (Machine Breakdown), Thiếu hụt vật liệu (Material Shortage), Biến động điện năng (Power Surge)... bằng hệ thống Decision Triad (Ưu tiên/Sửa chữa/Giao dịch).
+- **Đa dạng Đơn hàng & Sản phẩm:** 
+  - *Sản phẩm:* Xe đồ chơi (Toy Car), Robot, Búp bê cao cấp (Luxury Doll).
+  - *Đối tác/Đơn hàng:* Toy Kingdom, Prestige Play, Flash Deals với các yêu cầu và thời hạn (deadline) khắt khe.
+
+---
+
+## 📁 Cấu trúc Project (Project Structure)
+
+Dự án được tổ chức theo mô hình MVC thu gọn kết hợp với Singleton Pattern cho các Manager cốt lõi.
+
+```text
 Assets/
 ├── Scripts/
 │   ├── Core/
-│   │   ├── GameManager.cs         ← Singleton: state, timer, credits, reputation
-│   │   ├── ResourceManager.cs     ← Materials, Power, Workers
-│   │   ├── ProductionManager.cs   ← Queue-based Process A & B pipeline
-│   │   ├── OrderManager.cs        ← Orders, shipping, win detection
-│   │   └── PressureDirector.cs    ← Difficulty tier (1-5), random event scheduler
+│   │   ├── GameManager.cs         ← Singleton: Trạng thái game, đếm ngược, điểm, danh tiếng
+│   │   ├── ResourceManager.cs     ← Quản lý Vật liệu, Điện năng, Nhân công
+│   │   ├── ProductionManager.cs   ← Xử lý hàng đợi quy trình A & B
+│   │   ├── OrderManager.cs        ← Quản lý tiến trình đơn hàng và nhận diện chiến thắng
+│   │   └── PressureDirector.cs    ← Hệ thống độ khó (1-5) và bộ lên lịch sự kiện ngẫu nhiên
 │   ├── Data/  (ScriptableObjects)
-│   │   ├── ProductData.cs         ← Define Toy Car / Robot / Doll
-│   │   ├── OrderData.cs           ← Define Toy Kingdom / Prestige / Flash orders
-│   │   └── RandomEventData.cs     ← Define events (Breakdown, Shortage, Surge…)
+│   │   ├── ProductData.cs         ← Dữ liệu: Toy Car / Robot / Doll
+│   │   ├── OrderData.cs           ← Dữ liệu đơn hàng: Toy Kingdom / Prestige / Flash 
+│   │   └── RandomEventData.cs     ← Định nghĩa sự kiện (Hỏng máy, Thiếu hụt…)
 │   ├── Gameplay/
-│   │   ├── Machine.cs             ← Click to produce; shows visual state
-│   │   └── Worker.cs              ← Fatigue + rest mechanic
+│   │   ├── Machine.cs             ← Logic máy móc, hiệu ứng hình ảnh
+│   │   └── Worker.cs              ← Cơ chế mệt mỏi & nghỉ ngơi của nhân công
 │   └── UI/
-│       ├── UIManager.cs           ← HUD: timer, bars, tier indicators
-│       └── EventPopupUI.cs        ← Decision Triad popup (Prioritize/Repair/Trade)
-├── ScriptableObjects/
-│   ├── Products/                  ← Put .asset files for each product here
-│   ├── Orders/                    ← Put .asset files for each order here
-│   └── Events/                    ← Put .asset files for each event here
-├── Prefabs/
-│   ├── Machines/
-│   └── UI/
+│       ├── UIManager.cs           ← HUD hiển thị trạng thái
+│       └── EventPopupUI.cs        ← UI lựa chọn quyết định khi có sự kiện (Decision Triad)
+├── ScriptableObjects/             ← Nơi chứa các file .asset (Dữ liệu)
+├── Prefabs/                       ← Các Prefab của Machine, UI, Worker
 ├── Scenes/
-│   └── GameScene.unity            ← Main gameplay scene
-├── Art/Sprites/
-└── Audio/
+│   └── GameScene.unity            ← Scene chính của trò chơi
+├── Art/Sprites/                   ← Tài nguyên hình ảnh 2D
+└── Audio/                         ← Tài nguyên âm thanh
 ```
 
 ---
 
-## 🚀 Setup Steps (Unity 2022 LTS or newer)
+## 🚀 Hướng dẫn Cài đặt & Chạy (Thiết lập Unity 2022 LTS+)
 
-### Step 1 — Create Unity Project
-1. Open **Unity Hub** → New Project
-2. Select **2D (URP)** template
-3. Name: `TinyToysFactory`
-4. **Copy all files** from this folder into the new project's `Assets/` folder
+### Bước 1 — Tạo Unity Project
+1. Mở **Unity Hub** và chọn **New Project**.
+2. Chọn Template **2D (URP)**.
+3. Đặt tên Project là: `TinyToysFactory`.
+4. Copy toàn bộ thư mục `Assets` của repository này đè lên thư mục `Assets` của project vừa tạo.
 
-### Step 2 — Install TextMeshPro
-- **Window → Package Manager → TextMeshPro** → Install
-- When prompted, import TMP Essential Resources
+### Bước 2 — Cài đặt TextMeshPro
+- Mở **Window → Package Manager → chọn TextMeshPro** → Install.
+- Khi có thông báo Prompt, hãy bấm import **TMP Essential Resources**.
 
-### Step 3 — Create ScriptableObject Assets
+### Bước 3 — Tạo Dữ liệu ScriptableObject
 
-#### Products (Assets/ScriptableObjects/Products/)
-Right-click → Create → TinyToysFactory → ProductData
+**Products (Assets/ScriptableObjects/Products/)**
+Click chuột phải → Create → TinyToysFactory → ProductData
+- `Product_ToyCar` (Xe đồ chơi): Chi phí (Cost) 10/8, Lắp ráp 8s, Đóng gói 6s, 30 Điểm.
+- `Product_Robot` (Robot): Chi phí 15/12, Lắp ráp 12s, Đóng gói 10s, 55 Điểm.
+- `Product_Doll` (Búp bê): Chi phí 20/18, Lắp ráp 18s, Đóng gói 14s, 90 Điểm.
+*(Tất cả cần 1 nhân công, 30 Điện năng lắp ráp, 20 Điện năng đóng gói)*
 
-| Asset Name       | productName   | woodPlasticCost | assemblyTime | paintFabricCost | paintPackTime | baseCredits |
-|------------------|---------------|-----------------|--------------|-----------------|---------------|-------------|
-| Product_ToyCar   | Toy Car       | 10              | 8s           | 8               | 6s            | 30          |
-| Product_Robot    | Robot         | 15              | 12s          | 12              | 10s           | 55          |
-| Product_Doll     | Luxury Doll   | 20              | 18s          | 18              | 14s           | 90          |
+**Orders (Assets/ScriptableObjects/Orders/)**
+Click chuột phải → Create → TinyToysFactory → OrderData
+- Máy chủ và đối tác: `Order_ToyKingdom1`, `Order_Prestige1`, `Order_FlashDeal1` với các yêu cầu riêng biệt.
 
-For all: `workersRequired = 1`, `powerPerAssembly = 30`, `powerPerPaint = 20`
+**Events (Assets/ScriptableObjects/Events/)**
+Click chuột phải → Create → TinyToysFactory → RandomEventData
+- Tạo các sự kiện tương ứng như hỏng máy, quá tải đơn hàng,...
 
-#### Orders (Assets/ScriptableObjects/Orders/)
-Right-click → Create → TinyToysFactory → OrderData
+### Bước 4 — Thiết lập Scene (`GameScene.unity`)
 
-| Asset Name           | faction      | Required Products       | deadline | creditsReward |
-|----------------------|--------------|-------------------------|----------|---------------|
-| Order_ToyKingdom1    | ToyKingdom   | 6× ToyCar, 3× Robot     | 180s     | 200           |
-| Order_Prestige1      | PrestigePlay | 2× Doll                 | 240s     | 180           |
-| Order_FlashDeal1     | FlashDeals   | 4× Robot                | 120s     | 220           |
-
-#### Events (Assets/ScriptableObjects/Events/)
-Right-click → Create → TinyToysFactory → RandomEventData
-
-| Asset Name             | eventType           | minTier | Prioritize → effect        |
-|------------------------|---------------------|---------|----------------------------|
-| Event_MachineBreakdown | MachineBreakdown    | 1       | Repair: halt 20s           |
-| Event_MaterialShortage | MaterialShortage    | 1       | Trade: -50 credits         |
-| Event_BulkOrderSpike   | BulkOrderSpike      | 2       | Accept/Decline choice      |
-| Event_PowerSurge       | PowerSurge          | 2       | Redistribute or halt       |
-| Event_WorkerExhaustion | WorkerExhaustion    | 3       | Rest or risk broken output |
-
-### Step 4 — Scene Setup
-
-#### GameObjects to create in GameScene:
-```
-Scene Hierarchy:
+Đảm bảo cấu trúc Scene Hierarchy có đầy đủ các Manager (Sử dụng Singleton):
+```text
 ├── [Manager]              (Empty GameObject)
-│   ├── GameManager        (Add GameManager.cs)
-│   ├── ResourceManager    (Add ResourceManager.cs)
-│   ├── ProductionManager  (Add ProductionManager.cs)
-│   ├── OrderManager       (Add OrderManager.cs → assign availableOrders)
-│   └── PressureDirector   (Add PressureDirector.cs → assign eventPool)
-│
+│   ├── GameManager       
+│   ├── ResourceManager   
+│   ├── ProductionManager 
+│   ├── OrderManager       (Gán danh sách các Order .asset vào availableOrders)
+│   └── PressureDirector   (Gán các Event .asset vào eventPool)
 ├── [Machines]
-│   ├── AssemblyMachineA   (Sprite + Machine.cs, type=AssemblyA, assign product)
-│   └── PaintMachineB      (Sprite + Machine.cs, type=PaintPackB, assign product)
-│
-├── [Workers]
-│   ├── Worker1            (Sprite + Worker.cs)
-│   ├── Worker2            (Sprite + Worker.cs)
-│   └── Worker3            (Sprite + Worker.cs)
-│
+│   ├── AssemblyMachineA   (Cần có Machine.cs, type=AssemblyA)
+│   └── PaintMachineB      (Cần có Machine.cs, type=PaintPackB)
+├── [Workers]              (Các Worker GameObject kèm Worker.cs)
 └── Canvas (UI)
-    ├── HUD                (Add UIManager.cs, wire all text/image references)
-    └── EventPopup         (Add EventPopupUI.cs, wire buttons + texts, SetActive=false)
+    ├── HUD                (UIManager.cs - Kéo thả các tham chiếu text/image)
+    └── EventPopup         (EventPopupUI.cs - Bắt đầu với SetActive=false)
 ```
-
-### Step 5 — Wire References in Inspector
-- **OrderManager**: drag Order .asset files into `availableOrders` list
-- **PressureDirector**: drag Event .asset files into `eventPool` list
-- **UIManager**: drag all Text, Image, Button references from Canvas
-- **EventPopupUI**: drag panel, buttons, texts
+> **Lưu ý quan trọng:** Hãy đảm bảo tất cả các file ScriptableObject (Products, Orders, Events) đã được gán đầy đủ vào các thành phần Manager tương ứng trong thẻ `Inspector` trước khi bấm Play.
 
 ---
 
-## 🎮 Core Game Flow
+## 📋 Luồng trò chơi (Core Game Flow)
 
-```
-Start → GameManager.StartGame()
-     → OrderManager.AutoAcceptNextOrder()
-     → Player clicks Machine → StartBatchA()
-     → ProductionManager processes A then B
-     → OnBatchCompletedB → OrderManager tracks progress
-     → PressureDirector fires random events
-     → EventPopupUI shows Triad → player chooses
-     → All products shipped → GameManager.TriggerWin()
-```
+1. `GameManager.StartGame()` khởi chạy.
+2. `OrderManager` tự động nhận đơn hàng đầu tiên.
+3. Người chơi click vào các **Machine** để bắt đầu dải sản xuất (`StartBatchA()`).
+4. `ProductionManager` xử lý dây chuyền từ công đoạn A sang công đoạn B.
+5. Sau mỗi lô hoàn thành, `OrderManager` cập nhật tiến độ.
+6. `PressureDirector` liên tục đánh giá và có thể kích hoạt Sự kiện ngẫu nhiên (`Random Events`).
+7. Bảng `EventPopupUI` hiện lên, yêu cầu người chơi đưa ra quyết định (Ưu tiên sản xuất / Sửa chữa / Chấp nhận tổn thất).
+8. Trò chơi kết thúc (Win) khi toàn bộ sản phẩm của đơn hàng được giao thành công trong thời gian cho phép; hoặc Thua (Lose) nếu hết thời gian/cạn kiệt tài nguyên.
 
 ---
 
-## 📋 Script Dependencies
+## 👥 Phân chia công việc (Task Division Suggestion)
 
-```
-GameManager     ← (no deps — Singleton root)
-ResourceManager ← GameManager
-ProductionManager ← ResourceManager
-OrderManager    ← ProductionManager, PressureDirector, GameManager
-PressureDirector← ProductionManager, GameManager
-UIManager       ← All above
-EventPopupUI    ← PressureDirector
-Machine         ← ProductionManager
-Worker          ← ResourceManager, GameManager
-```
-
-> **Important:** Add all Manager scripts to the scene **before** hitting Play.  
-> All managers use `Instance` Singleton pattern — only one of each should exist.
-
----
-
-## 👥 Team Task Division
-
-| Member | Files to own |
+| Thành viên | Nhiệm vụ / File phụ trách |
 |--------|-------------|
-| A (Designer) | ProductData, OrderData, RandomEventData (tuning numbers) |
-| B (Core Dev) | ProductionManager, OrderManager, PressureDirector |
-| C (UI Dev) | UIManager, EventPopupUI |
-| D (Art/Level) | Machine sprites, Worker sprites, Scene layout |
+| **Designer** | `ProductData`, `OrderData`, `RandomEventData` (Cân bằng chỉ số game) |
+| **Core Dev** | `ProductionManager`, `OrderManager`, `PressureDirector` |
+| **UI Dev**   | `UIManager`, `EventPopupUI` |
+| **Art/Level**| Hình ảnh Machine, Worker, Sắp xếp Scene Game |
 
----
-
-*PRU213 — Tiny Toys Factory | March 2026*
+*Dự án PRU213 — Tiny Toys Factory | Phát triển năm 2026*

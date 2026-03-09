@@ -24,11 +24,16 @@ public class ResourceManager : MonoBehaviour
     [Header("Workers")]
     public int maxWorkers = 3;
 
+    [Header("Product Inventory")]
+    public int maxInventoryCapacity = 50;
+
     // ── State (read-only externally) ─────────────────────────────────────
     public int WoodPlastic { get; private set; }
     public int PaintFabric { get; private set; }
     public int Power { get; private set; }
     public int AvailableWorkers { get; private set; }
+
+    private System.Collections.Generic.Dictionary<ProductData, int> _inventory = new System.Collections.Generic.Dictionary<ProductData, int>();
 
     // ── Events ───────────────────────────────────────────────────────────
     public UnityEvent<int> OnWoodPlasticChanged;
@@ -37,6 +42,7 @@ public class ResourceManager : MonoBehaviour
     public UnityEvent<int> OnWorkersChanged;
     public UnityEvent OnMaterialCritical;   // < 20% threshold
     public UnityEvent OnPowerCritical;
+    public UnityEvent<ProductData, int> OnInventoryChanged;
 
     private float _restockTimer;
 
@@ -145,6 +151,50 @@ public class ResourceManager : MonoBehaviour
         maxWorkers++;
         AvailableWorkers++;
         OnWorkersChanged?.Invoke(AvailableWorkers);
+    }
+
+    // ── Product Inventory ────────────────────────────────────────────────
+    public bool IsInventoryFull()
+    {
+        int total = 0;
+        foreach (var kvp in _inventory) total += kvp.Value;
+        return total >= maxInventoryCapacity;
+    }
+
+    public void AddProduct(ProductData product, int amount)
+    {
+        if (product == null || amount <= 0) return;
+        
+        if (IsInventoryFull())
+        {
+            Debug.LogWarning("[ResourceManager] Inventory full! Cannot add product.");
+            return;
+        }
+
+        int current = _inventory.ContainsKey(product) ? _inventory[product] : 0;
+        
+        // Prevent exceeding total capacity
+        int total = 0;
+        foreach (var kvp in _inventory) total += kvp.Value;
+        int maxCanAdd = maxInventoryCapacity - total;
+        int actualAdd = Mathf.Min(amount, maxCanAdd);
+
+        _inventory[product] = current + actualAdd;
+        OnInventoryChanged?.Invoke(product, _inventory[product]);
+    }
+
+    public bool HasProduct(ProductData product, int amount)
+    {
+        return _inventory.ContainsKey(product) && _inventory[product] >= amount;
+    }
+
+    public bool RemoveProduct(ProductData product, int amount)
+    {
+        if (!HasProduct(product, amount)) return false;
+        
+        _inventory[product] -= amount;
+        OnInventoryChanged?.Invoke(product, _inventory[product]);
+        return true;
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────

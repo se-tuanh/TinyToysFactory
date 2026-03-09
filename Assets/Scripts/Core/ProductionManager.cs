@@ -26,18 +26,11 @@ public class ProductionManager : MonoBehaviour
     [Header("Storage Buffer (A → B)")]
     public int maxBufferSize = 5; // batches waiting between A and B
 
-    // ── State ────────────────────────────────────────────────────────────
-    public bool IsProcessARunning  { get; private set; }
-    public bool IsProcessBRunning  { get; private set; }
-    public bool IsProcessABlocked  { get; private set; } // event-blocked
-    public bool IsProcessBBlocked  { get; private set; }
-
-    private Queue<BatchJob> _bufferQueue = new Queue<BatchJob>(); // A → B buffer
-    private List<BatchJob> _completedBatches = new List<BatchJob>(); // ready to ship
+    // ── Management State ─────────────────────────────────────────────────
+    private List<Machine> _registeredMachines = new List<Machine>();
+    private Queue<BatchJob> _wipBuffer = new Queue<BatchJob>(); // A → B buffer
 
     // ── Events ───────────────────────────────────────────────────────────
-    public UnityEvent<BatchJob> OnBatchCompletedA;   // batch ready for B
-    public UnityEvent<BatchJob> OnBatchCompletedB;   // batch ready to ship
     public UnityEvent<int>      OnBufferChanged;      // buffer count changed
     public UnityEvent           OnProductionABlocked;
     public UnityEvent           OnProductionBBlocked;
@@ -51,47 +44,87 @@ public class ProductionManager : MonoBehaviour
 
     // ── Public API ───────────────────────────────────────────────────────
 
-    /// <summary>Start a batch through Quy trinh A.</summary>
-    public bool StartBatchA(ProductData product, int quantity)
+    // ── Machine Registry ─────────────────────────────────────────────────
+    public void RegisterMachine(Machine machine)
     {
-        if (IsProcessARunning || IsProcessABlocked) return false;
-
-        var rm = ResourceManager.Instance;
-
-        // Calculate costs with mode multiplier
-        int woodCost  = Mathf.RoundToInt(product.woodPlasticCost * quantity * GetCostMultiplier());
-        int powerCost = product.powerPerAssembly * quantity;
-
-        if (!rm.ConsumeWoodPlastic(woodCost)) { Debug.LogWarning("[Production] Not enough Wood/Plastic!"); return false; }
-        if (!rm.ConsumePower(powerCost))      { Debug.LogWarning("[Production] Not enough Power!"); return false; }
-        if (!rm.AssignWorker())               { Debug.LogWarning("[Production] No available workers!"); return false; }
-
-        float duration = product.assemblyTime * quantity / GetSpeedMultiplier();
-        var job = new BatchJob(product, quantity, duration);
-
-        IsProcessARunning = true;
-        StartCoroutine(RunProcessA(job));
-        return true;
+        if (!_registeredMachines.Contains(machine))
+        {
+            _registeredMachines.Add(machine);
+        }
     }
 
-    /// <summary>Block/unblock Quy trinh A (e.g., broken machine event).</summary>
+    public void UnregisterMachine(Machine machine)
+    {
+        if (_registeredMachines.Contains(machine))
+        {
+            _registeredMachines.Remove(machine);
+        }
+    }
+
+    public List<Machine> GetMachineStatus()
+    {
+        return _registeredMachines;
+    }
+
+    // ── WIP Buffer Management (A → B) ────────────────────────────────────
+    public void ReceiveWIP(BatchJob job)
+    {
+        if (_wipBuffer.Count >= maxBufferSize)
+        {
+            Debug.LogWarning("[ProductionManager] Buffer full! WIP item from Assembly lost.");
+            return;
+        }
+
+        _wipBuffer.Enqueue(job);
+        OnBufferChanged?.Invoke(_wipBuffer.Count);
+        Debug.Log($"[ProductionManager] Received WIP {job.product.productName}. Buffer: {_wipBuffer.Count}/{maxBufferSize}");
+    }
+
+    public BatchJob DequeueWIP(ProductData requiredProduct)
+    {
+        // Find the first job that matches the required product type
+        // Note: For MVP we might just take the first, but to be safe we should find a match.
+        // Queue isn't great for finding specific items, but for MVP let's assume factories 
+        // usually process what's in order, or we use a List as a buffer if needed.
+        // Let's implement a simple seek for now.
+        
+        List<BatchJob> tempList = new List<BatchJob>(_wipBuffer);
+        for (int i = 0; i < tempList.Count; i++)
+        {
+            if (tempList[i].product == requiredProduct)
+            {
+                var job = tempList[i];
+                tempList.RemoveAt(i);
+                
+                // Rebuild queue
+                _wipBuffer.Clear();
+                foreach (var j in tempList) _wipBuffer.Enqueue(j);
+                
+                OnBufferChanged?.Invoke(_wipBuffer.Count);
+                return job;
+            }
+        }
+        return null; // Not found
+    }
+
+    public void ReturnWIP(BatchJob job)
+    {
+        // Put it back at the front essentially, or just enqueue if we don't care about strict order
+        _wipBuffer.Enqueue(job);
+        OnBufferChanged?.Invoke(_wipBuffer.Count);
+    }
+
+
+    // ── Public API ───────────────────────────────────────────────────────
+
     public void SetProcessABlocked(bool blocked)
     {
-        IsProcessABlocked = blocked;
         if (blocked) OnProductionABlocked?.Invoke();
     }
 
     public void SetProcessBBlocked(bool blocked)
     {
-        IsProcessBBlocked = blocked;
         if (blocked) OnProductionBBlocked?.Invoke();
-    }
-
-    public List<BatchJob> CollectCompletedBatches()
-    {
-        var result = new List<BatchJob>(_completedBatches);
-        _completedBatches.Clear();
-        return result;
     }
 
     public void SetProductionMode(ProductionMode mode)
@@ -100,71 +133,35 @@ public class ProductionManager : MonoBehaviour
         Debug.Log($"[Production] Mode set to {mode}");
     }
 
-    // ── Coroutines ───────────────────────────────────────────────────────
-    private IEnumerator RunProcessA(BatchJob job)
-    {
-        yield return new WaitForSeconds(job.duration);
-
-        ResourceManager.Instance.ReleaseWorker();
-        IsProcessARunning = false;
-
-        if (_bufferQueue.Count < maxBufferSize)
-        {
-            _bufferQueue.Enqueue(job);
-            OnBatchCompletedA?.Invoke(job);
-            OnBufferChanged?.Invoke(_bufferQueue.Count);
-
-            // Auto-start B if not running
-            if (!IsProcessBRunning && !IsProcessBBlocked)
-                StartCoroutine(RunProcessB());
-        }
-        else
-        {
-            Debug.LogWarning("[Production] Buffer full! Batch from A lost.");
-        }
-    }
-
-    private IEnumerator RunProcessB()
-    {
-        while (_bufferQueue.Count > 0)
-        {
-            if (IsProcessBBlocked) { yield return new WaitForSeconds(0.5f); continue; }
-
-            var job = _bufferQueue.Dequeue();
-            OnBufferChanged?.Invoke(_bufferQueue.Count);
-
-            var rm = ResourceManager.Instance;
-            int paintCost = Mathf.RoundToInt(job.product.paintFabricCost * job.quantity * GetCostMultiplier());
-            int powerCost = job.product.powerPerPaint * job.quantity;
-
-            rm.ConsumePaintFabric(paintCost);
-            rm.ConsumePower(powerCost);
-            rm.AssignWorker();
-
-            IsProcessBRunning = true;
-            float duration = job.product.paintPackTime * job.quantity / GetSpeedMultiplier();
-            yield return new WaitForSeconds(duration);
-
-            rm.ReleaseWorker();
-
-            // Quality mode: add reputation bonus
-            if (currentMode == ProductionMode.Quality)
-                GameManager.Instance.AddReputation(qualityReputationBonus * job.quantity);
-
-            _completedBatches.Add(job);
-            OnBatchCompletedB?.Invoke(job);
-        }
-        IsProcessBRunning = false;
-    }
-
     // ── Helpers ──────────────────────────────────────────────────────────
-    private float GetSpeedMultiplier()
+    public float GetSpeedMultiplier()
     {
         return currentMode switch
         {
             ProductionMode.Fast    => fastSpeedMultiplier,
             ProductionMode.Quality => qualitySpeedMultiplier,
             _                      => 1f
+        };
+    }
+
+    public float GetCostMultiplier()
+    {
+        return currentMode == ProductionMode.Fast ? fastCostMultiplier : 1f;
+    }
+
+    public float GetProductionTimeMultiplier()
+    {
+        if (PressureDirector.Instance == null) return 1f;
+
+        // Tier high -> slow down production slightly to increase pressure
+        return PressureDirector.Instance.CurrentTier switch
+        {
+            1 => 1.0f,
+            2 => 1.1f,
+            3 => 1.25f,
+            4 => 1.4f,
+            5 => 1.6f,
+            _ => 1.0f
         };
     }
 
