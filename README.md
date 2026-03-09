@@ -13,60 +13,9 @@
   - *Sản phẩm:* Xe đồ chơi (Toy Car), Robot, Búp bê cao cấp (Luxury Doll).
   - *Đối tác/Đơn hàng:* Toy Kingdom, Prestige Play, Flash Deals với các yêu cầu và thời hạn (deadline) khắt khe.
 
----
 
 
 
-## Hướng dẫn Cài đặt & Chạy (Thiết lập Unity 2022 LTS+)
-
-### Bước 1 — Tạo Unity Project
-1. Mở **Unity Hub** và chọn **New Project**.
-2. Chọn Template **2D (URP)**.
-3. Đặt tên Project là: `TinyToysFactory`.
-4. Copy toàn bộ thư mục `Assets` của repository này đè lên thư mục `Assets` của project vừa tạo.
-
-### Bước 2 — Cài đặt TextMeshPro
-- Mở **Window → Package Manager → chọn TextMeshPro** → Install.
-- Khi có thông báo Prompt, hãy bấm import **TMP Essential Resources**.
-
-### Bước 3 — Tạo Dữ liệu ScriptableObject
-
-**Products (Assets/ScriptableObjects/Products/)**
-Click chuột phải → Create → TinyToysFactory → ProductData
-- `Product_ToyCar` (Xe đồ chơi): Chi phí (Cost) 10/8, Lắp ráp 8s, Đóng gói 6s, 30 Điểm.
-- `Product_Robot` (Robot): Chi phí 15/12, Lắp ráp 12s, Đóng gói 10s, 55 Điểm.
-- `Product_Doll` (Búp bê): Chi phí 20/18, Lắp ráp 18s, Đóng gói 14s, 90 Điểm.
-*(Tất cả cần 1 nhân công, 30 Điện năng lắp ráp, 20 Điện năng đóng gói)*
-
-**Orders (Assets/ScriptableObjects/Orders/)**
-Click chuột phải → Create → TinyToysFactory → OrderData
-- Máy chủ và đối tác: `Order_ToyKingdom1`, `Order_Prestige1`, `Order_FlashDeal1` với các yêu cầu riêng biệt.
-
-**Events (Assets/ScriptableObjects/Events/)**
-Click chuột phải → Create → TinyToysFactory → RandomEventData
-- Tạo các sự kiện tương ứng như hỏng máy, quá tải đơn hàng,...
-
-### Bước 4 — Thiết lập Scene (`GameScene.unity`)
-
-Đảm bảo cấu trúc Scene Hierarchy có đầy đủ các Manager (Sử dụng Singleton):
-```text
-├── [Manager]              (Empty GameObject)
-│   ├── GameManager       
-│   ├── ResourceManager   
-│   ├── ProductionManager 
-│   ├── OrderManager       (Gán danh sách các Order .asset vào availableOrders)
-│   └── PressureDirector   (Gán các Event .asset vào eventPool)
-├── [Machines]
-│   ├── AssemblyMachineA   (Cần có Machine.cs, type=AssemblyA)
-│   └── PaintMachineB      (Cần có Machine.cs, type=PaintPackB)
-├── [Workers]              (Các Worker GameObject kèm Worker.cs)
-└── Canvas (UI)
-    ├── HUD                (UIManager.cs - Kéo thả các tham chiếu text/image)
-    └── EventPopup         (EventPopupUI.cs - Bắt đầu với SetActive=false)
-```
-> **Lưu ý quan trọng:** Hãy đảm bảo tất cả các file ScriptableObject (Products, Orders, Events) đã được gán đầy đủ vào các thành phần Manager tương ứng trong thẻ `Inspector` trước khi bấm Play.
-
----
 
 ## Core Game Flow
 
