@@ -1,10 +1,10 @@
-# 🧸 Tiny Toys Factory
+#  Tiny Toys Factory
 
 **Tiny Toys Factory** là một tựa game mô phỏng quản lý nhà máy sản xuất đồ chơi (Manufacture Simulation) được phát triển trên Unity 2D URP. Trong game, người chơi sẽ vào vai một quản đốc nhà máy, chịu trách nhiệm quản lý tài nguyên, tối ưu hóa dây chuyền sản xuất đa công đoạn (Lắp ráp & Sơn/Đóng gói), và xử lý các sự kiện ngẫu nhiên áp lực cao để hoàn thành các đơn hàng đúng hạn.
 
 ---
 
-## 🎮 Tính năng cốt lõi (Core Features)
+##  Core Features
 
 - **Quản lý đa tài nguyên:** Cân đối giữa Vật liệu (Materials), Điện năng (Power) và Nhân công (Workers). Đảm bảo nhân công được nghỉ ngơi để tránh kiệt sức (Fatigue mechanic).
 - **Dây chuyền sản xuất thực tế:** Các sản phẩm trải qua quy trình sản xuất A (Lắp ráp - Assembly) và quy trình B (Sơn & Đóng gói - Paint & Pack).
@@ -17,7 +17,7 @@
 
 
 
-## 🚀 Hướng dẫn Cài đặt & Chạy (Thiết lập Unity 2022 LTS+)
+## Hướng dẫn Cài đặt & Chạy (Thiết lập Unity 2022 LTS+)
 
 ### Bước 1 — Tạo Unity Project
 1. Mở **Unity Hub** và chọn **New Project**.
@@ -68,7 +68,7 @@ Click chuột phải → Create → TinyToysFactory → RandomEventData
 
 ---
 
-## 📋 Luồng trò chơi (Core Game Flow)
+## Core Game Flow
 
 1. `GameManager.StartGame()` khởi chạy.
 2. `OrderManager` tự động nhận đơn hàng đầu tiên.
