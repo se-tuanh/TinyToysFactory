@@ -15,38 +15,7 @@
 
 ---
 
-## 📁 Cấu trúc Project (Project Structure)
 
-Dự án được tổ chức theo mô hình MVC thu gọn kết hợp với Singleton Pattern cho các Manager cốt lõi.
-
-```text
-Assets/
-├── Scripts/
-│   ├── Core/
-│   │   ├── GameManager.cs         ← Singleton: Trạng thái game, đếm ngược, điểm, danh tiếng
-│   │   ├── ResourceManager.cs     ← Quản lý Vật liệu, Điện năng, Nhân công
-│   │   ├── ProductionManager.cs   ← Xử lý hàng đợi quy trình A & B
-│   │   ├── OrderManager.cs        ← Quản lý tiến trình đơn hàng và nhận diện chiến thắng
-│   │   └── PressureDirector.cs    ← Hệ thống độ khó (1-5) và bộ lên lịch sự kiện ngẫu nhiên
-│   ├── Data/  (ScriptableObjects)
-│   │   ├── ProductData.cs         ← Dữ liệu: Toy Car / Robot / Doll
-│   │   ├── OrderData.cs           ← Dữ liệu đơn hàng: Toy Kingdom / Prestige / Flash 
-│   │   └── RandomEventData.cs     ← Định nghĩa sự kiện (Hỏng máy, Thiếu hụt…)
-│   ├── Gameplay/
-│   │   ├── Machine.cs             ← Logic máy móc, hiệu ứng hình ảnh
-│   │   └── Worker.cs              ← Cơ chế mệt mỏi & nghỉ ngơi của nhân công
-│   └── UI/
-│       ├── UIManager.cs           ← HUD hiển thị trạng thái
-│       └── EventPopupUI.cs        ← UI lựa chọn quyết định khi có sự kiện (Decision Triad)
-├── ScriptableObjects/             ← Nơi chứa các file .asset (Dữ liệu)
-├── Prefabs/                       ← Các Prefab của Machine, UI, Worker
-├── Scenes/
-│   └── GameScene.unity            ← Scene chính của trò chơi
-├── Art/Sprites/                   ← Tài nguyên hình ảnh 2D
-└── Audio/                         ← Tài nguyên âm thanh
-```
-
----
 
 ## 🚀 Hướng dẫn Cài đặt & Chạy (Thiết lập Unity 2022 LTS+)
 
@@ -110,15 +79,6 @@ Click chuột phải → Create → TinyToysFactory → RandomEventData
 7. Bảng `EventPopupUI` hiện lên, yêu cầu người chơi đưa ra quyết định (Ưu tiên sản xuất / Sửa chữa / Chấp nhận tổn thất).
 8. Trò chơi kết thúc (Win) khi toàn bộ sản phẩm của đơn hàng được giao thành công trong thời gian cho phép; hoặc Thua (Lose) nếu hết thời gian/cạn kiệt tài nguyên.
 
----
 
-## 👥 Phân chia công việc (Task Division Suggestion)
 
-| Thành viên | Nhiệm vụ / File phụ trách |
-|--------|-------------|
-| **Designer** | `ProductData`, `OrderData`, `RandomEventData` (Cân bằng chỉ số game) |
-| **Core Dev** | `ProductionManager`, `OrderManager`, `PressureDirector` |
-| **UI Dev**   | `UIManager`, `EventPopupUI` |
-| **Art/Level**| Hình ảnh Machine, Worker, Sắp xếp Scene Game |
 
-*Dự án PRU213 — Tiny Toys Factory | Phát triển năm 2026*
