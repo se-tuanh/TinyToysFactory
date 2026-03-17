@@ -4,8 +4,8 @@ using UnityEngine;
 using UnityEngine.Events;
 
 /// <summary>
-/// ProductionManager — Controls Quy trinh A (Assembly) and Quy trinh B (Paint & Pack).
-/// Queue-based: batches enter A, then B, then go to shipping buffer.
+/// ProductionManager — Controls production flow between Process A (Assembly) and B (Paint & Pack).
+/// Fires batch-complete events consumed by OrderManager and UIManager.
 /// </summary>
 public class ProductionManager : MonoBehaviour
 {
@@ -18,20 +18,28 @@ public class ProductionManager : MonoBehaviour
 
     [Header("Multipliers per Mode")]
     [Tooltip("Fast: 1.4x speed, 1.2x resource cost | Safe: 1x | Quality: 0.8x speed, extra rep")]
-    public float fastSpeedMultiplier = 1.4f;
-    public float fastCostMultiplier  = 1.2f;
-    public float qualitySpeedMultiplier  = 0.8f;
-    public int   qualityReputationBonus  = 2;
+    public float fastSpeedMultiplier    = 1.4f;
+    public float fastCostMultiplier     = 1.2f;
+    public float qualitySpeedMultiplier = 0.8f;
+    public int   qualityReputationBonus = 2;
 
     [Header("Storage Buffer (A → B)")]
     public int maxBufferSize = 5; // batches waiting between A and B
 
     // ── Management State ─────────────────────────────────────────────────
-    private List<Machine> _registeredMachines = new List<Machine>();
-    private Queue<BatchJob> _wipBuffer = new Queue<BatchJob>(); // A → B buffer
+    private List<Machine>   _registeredMachines = new List<Machine>();
+    private Queue<BatchJob> _wipBuffer          = new Queue<BatchJob>(); // A → B buffer
+
+    // ── Process State ────────────────────────────────────────────────────
+    public bool IsProcessABlocked { get; private set; }
+    public bool IsProcessBBlocked { get; private set; }
+    public bool IsProcessARunning => GetMachineRunning(Machine.MachineType.AssemblyA);
+    public bool IsProcessBRunning => GetMachineRunning(Machine.MachineType.PaintPackB);
 
     // ── Events ───────────────────────────────────────────────────────────
-    public UnityEvent<int>      OnBufferChanged;      // buffer count changed
+    public UnityEvent<int>      OnBufferChanged;       // buffer count changed
+    public UnityEvent<BatchJob> OnBatchCompletedA;     // Assembly batch done → sends to buffer
+    public UnityEvent<BatchJob> OnBatchCompletedB;     // Paint&Pack batch done → product in inventory
     public UnityEvent           OnProductionABlocked;
     public UnityEvent           OnProductionBBlocked;
 
@@ -42,31 +50,23 @@ public class ProductionManager : MonoBehaviour
         Instance = this;
     }
 
-    // ── Public API ───────────────────────────────────────────────────────
-
     // ── Machine Registry ─────────────────────────────────────────────────
     public void RegisterMachine(Machine machine)
     {
         if (!_registeredMachines.Contains(machine))
-        {
             _registeredMachines.Add(machine);
-        }
     }
 
     public void UnregisterMachine(Machine machine)
     {
-        if (_registeredMachines.Contains(machine))
-        {
-            _registeredMachines.Remove(machine);
-        }
+        _registeredMachines.Remove(machine);
     }
 
-    public List<Machine> GetMachineStatus()
-    {
-        return _registeredMachines;
-    }
+    public List<Machine> GetMachineStatus() => _registeredMachines;
 
     // ── WIP Buffer Management (A → B) ────────────────────────────────────
+    public bool CanReceiveWIP() => _wipBuffer.Count < maxBufferSize;
+
     public void ReceiveWIP(BatchJob job)
     {
         if (_wipBuffer.Count >= maxBufferSize)
@@ -74,32 +74,24 @@ public class ProductionManager : MonoBehaviour
             Debug.LogWarning("[ProductionManager] Buffer full! WIP item from Assembly lost.");
             return;
         }
-
         _wipBuffer.Enqueue(job);
         OnBufferChanged?.Invoke(_wipBuffer.Count);
-        Debug.Log($"[ProductionManager] Received WIP {job.product.productName}. Buffer: {_wipBuffer.Count}/{maxBufferSize}");
+        OnBatchCompletedA?.Invoke(job);
+        Debug.Log($"[ProductionManager] WIP received: {job.product.productName}. Buffer: {_wipBuffer.Count}/{maxBufferSize}");
     }
 
     public BatchJob DequeueWIP(ProductData requiredProduct)
     {
-        // Find the first job that matches the required product type
-        // Note: For MVP we might just take the first, but to be safe we should find a match.
-        // Queue isn't great for finding specific items, but for MVP let's assume factories 
-        // usually process what's in order, or we use a List as a buffer if needed.
-        // Let's implement a simple seek for now.
-        
-        List<BatchJob> tempList = new List<BatchJob>(_wipBuffer);
+        // Seek the first matching product type in the buffer
+        var tempList = new List<BatchJob>(_wipBuffer);
         for (int i = 0; i < tempList.Count; i++)
         {
             if (tempList[i].product == requiredProduct)
             {
                 var job = tempList[i];
                 tempList.RemoveAt(i);
-                
-                // Rebuild queue
                 _wipBuffer.Clear();
                 foreach (var j in tempList) _wipBuffer.Enqueue(j);
-                
                 OnBufferChanged?.Invoke(_wipBuffer.Count);
                 return job;
             }
@@ -109,24 +101,30 @@ public class ProductionManager : MonoBehaviour
 
     public void ReturnWIP(BatchJob job)
     {
-        // Put it back at the front essentially, or just enqueue if we don't care about strict order
         _wipBuffer.Enqueue(job);
         OnBufferChanged?.Invoke(_wipBuffer.Count);
     }
 
+    /// <summary>Called by Machine.PaintPackB when a batch finishes.</summary>
+    public void NotifyBatchCompletedB(BatchJob job)
+    {
+        OnBatchCompletedB?.Invoke(job);
+    }
 
-    // ── Public API ───────────────────────────────────────────────────────
-
+    // ── Blocking ─────────────────────────────────────────────────────────
     public void SetProcessABlocked(bool blocked)
     {
+        IsProcessABlocked = blocked;
         if (blocked) OnProductionABlocked?.Invoke();
     }
 
     public void SetProcessBBlocked(bool blocked)
     {
+        IsProcessBBlocked = blocked;
         if (blocked) OnProductionBBlocked?.Invoke();
     }
 
+    // ── Production Mode ───────────────────────────────────────────────────
     public void SetProductionMode(ProductionMode mode)
     {
         currentMode = mode;
@@ -152,8 +150,6 @@ public class ProductionManager : MonoBehaviour
     public float GetProductionTimeMultiplier()
     {
         if (PressureDirector.Instance == null) return 1f;
-
-        // Tier high -> slow down production slightly to increase pressure
         return PressureDirector.Instance.CurrentTier switch
         {
             1 => 1.0f,
@@ -165,18 +161,29 @@ public class ProductionManager : MonoBehaviour
         };
     }
 
-    private float GetCostMultiplier()
+    private bool GetMachineRunning(Machine.MachineType type)
     {
-        return currentMode == ProductionMode.Fast ? fastCostMultiplier : 1f;
+        foreach (var m in _registeredMachines)
+            if (m.machineType == type && m.CurrentState == Machine.MachineState.Working)
+                return true;
+        return false;
+    }
+
+    /// <summary>Block or unblock all registered machines (called by PressureDirector during breakdown events).</summary>
+    public void BlockAll(bool blocked)
+    {
+        foreach (var m in _registeredMachines)
+            m.SetBlocked(blocked);
     }
 }
 
+// ── BatchJob ──────────────────────────────────────────────────────────────────
 [System.Serializable]
 public class BatchJob
 {
     public ProductData product;
-    public int quantity;
-    public float duration;
+    public int         quantity;
+    public float       duration;
 
     public BatchJob(ProductData product, int quantity, float duration)
     {

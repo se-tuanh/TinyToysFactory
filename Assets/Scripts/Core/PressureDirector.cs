@@ -4,45 +4,35 @@ using UnityEngine;
 using UnityEngine.Events;
 
 /// <summary>
-/// PressureDirector — Controls difficulty tier (1-5) based on time elapsed
-/// and schedules random events. The "Heat Director" equivalent for this game.
+/// PressureDirector — Manages the 5-tier pressure system.
+/// Tier increases on late orders / low reputation and decreases on streaks of good deliveries.
+/// Triggers random events at intervals based on current tier.
+/// Max 2 simultaneous events; cooldown after each resolution.
 /// </summary>
 public class PressureDirector : MonoBehaviour
 {
     public static PressureDirector Instance { get; private set; }
 
+    [Header("Config (assign GameplayConfig SO)")]
+    public GameplayConfig config;
+
     [Header("Event Pool")]
-    public List<RandomEventData> eventPool; // assign in Inspector
-
-    [Header("Tier Thresholds (time elapsed in seconds)")]
-    public float tier2At = 60f;
-    public float tier3At = 120f;
-    public float tier4At = 180f;
-    public float tier5At = 240f;
-
-    [Header("Event Intervals per Tier (seconds between events)")]
-    public float tier1Interval = 60f;
-    public float tier2Interval = 45f;
-    public float tier3Interval = 30f;
-    public float tier4Interval = 20f;
-    public float tier5Interval = 12f;
-
-    [Header("Grace period after tier-up (seconds — no event)")]
-    public float graceAfterTierUp = 10f;
-
-    // ── State ─────────────────────────────────────────────────────────────
-    public int CurrentTier { get; private set; } = 1;
-    public bool EventActive { get; private set; } = false;
-
-    private float _timeElapsed = 0f;
-    private float _nextEventTimer = 0f;
-    private float _graceTimer = 0f;
-    private bool  _inGrace = false;
+    public List<RandomEventData> eventPool;
 
     // ── Events ────────────────────────────────────────────────────────────
-    public UnityEvent<int>             OnTierChanged;   // new tier value
+    public UnityEvent<int>    OnTierChanged;      // new tier (1-5)
     public UnityEvent<RandomEventData> OnEventTriggered;
-    public UnityEvent                  OnEventResolved;
+    public UnityEvent<RandomEventData, EventChoice, bool> OnEventResolved; // event, choice, success
+
+    // ── State ─────────────────────────────────────────────────────────────
+    public  int CurrentTier { get; private set; } = 1;
+    private int _activeEventCount    = 0;
+    private int _consecutiveGood     = 0;
+    private int _lateOrderCount      = 0;
+    private float _nextEventTimer;
+    private bool  _graceActive;
+    private const int MIN_TIER = 1;
+    private const int MAX_TIER = 5;
 
     // ── Lifecycle ─────────────────────────────────────────────────────────
     private void Awake()
@@ -53,132 +43,174 @@ public class PressureDirector : MonoBehaviour
 
     private void Start()
     {
-        _nextEventTimer = GetCurrentInterval();
-        GameManager.Instance.OnGameStateChanged.AddListener(OnGameStateChanged);
+        SetTier(1);
+        GameManager.Instance.OnGameLose.AddListener(() => enabled = false);
+        GameManager.Instance.OnGameWin .AddListener(() => enabled = false);
     }
 
     private void Update()
     {
         if (GameManager.Instance.CurrentState != GameManager.GameState.Playing) return;
-        if (EventActive) return;
-
-        _timeElapsed += Time.deltaTime;
-        UpdateTier();
-
-        if (_inGrace)
-        {
-            _graceTimer -= Time.deltaTime;
-            if (_graceTimer <= 0f) _inGrace = false;
-            return;
-        }
+        if (_graceActive) return;
 
         _nextEventTimer -= Time.deltaTime;
-        if (_nextEventTimer <= 0f)
+        if (_nextEventTimer <= 0f) TriggerRandomEvent();
+    }
+
+    // ── Tier callbacks (called by OrderManager) ───────────────────────────
+    public void RegisterLateOrder()
+    {
+        _lateOrderCount++;
+        _consecutiveGood = 0;
+        int threshold = config ? config.lateOrdersToTierUp : 2;
+        if (_lateOrderCount >= threshold)
         {
-            TriggerRandomEvent();
-            _nextEventTimer = GetCurrentInterval();
+            _lateOrderCount = 0;
+            TierUp();
         }
     }
 
-    // ── Public API ────────────────────────────────────────────────────────
-
-    /// <summary>Call after player resolves an event (from EventPopupUI).</summary>
-    public void ResolveEvent(EventChoice choice)
+    public void RegisterGoodDelivery()
     {
-        EventActive = false;
-
-        // Apply choice effects
-        if (choice.timeCost > 0)
-            GameManager.Instance.AddReputation(0); // no time API yet — handled via game timer
-
-        if (choice.creditCost > 0)
-            GameManager.Instance.SpendCredits(choice.creditCost);
-
-        if (choice.reputationChange != 0)
-            GameManager.Instance.AddReputation(choice.reputationChange);
-
-        if (choice.pressureTierChange != 0)
-            ForceSetTier(Mathf.Clamp(CurrentTier + choice.pressureTierChange, 1, 5));
-
-        if (choice.productionStopDuration > 0)
-            StartCoroutine(BlockProductionFor(choice.productionStopDuration));
-
-        OnEventResolved?.Invoke();
-        Debug.Log($"[PressureDirector] Event resolved: {choice.choiceLabel}");
+        _consecutiveGood++;
+        _lateOrderCount = Mathf.Max(0, _lateOrderCount - 1); // partial forgive
+        int threshold = config ? config.goodDeliveriesForTierDown : 3;
+        if (_consecutiveGood >= threshold)
+        {
+            _consecutiveGood = 0;
+            TierDown();
+        }
     }
 
-    public void ForceSetTier(int tier)
+    public void CheckReputationTierUp(int currentRep)
     {
-        int clamped = Mathf.Clamp(tier, 1, 5);
-        if (clamped == CurrentTier) return;
-        CurrentTier = clamped;
-        _inGrace = true;
-        _graceTimer = graceAfterTierUp;
-        _nextEventTimer = GetCurrentInterval();
+        int threshold = config ? config.repThresholdForTierUp : 50;
+        if (currentRep < threshold) TierUp();
+    }
+
+    // ── Event resolution ──────────────────────────────────────────────────
+    /// <summary>Called when player picks a choice from EventPopupUI.</summary>
+    public void ResolveEvent(RandomEventData ev, EventChoice choice)
+    {
+        // Apply credit cost
+        if (choice.creditCost > 0) GameManager.Instance.AddCredits(-choice.creditCost);
+        // Apply rep change
+        if (choice.reputationChange != 0) GameManager.Instance.AddReputation(choice.reputationChange);
+        // Apply production stop
+        if (choice.productionStopDuration > 0) StartCoroutine(StopProductionFor(choice.productionStopDuration));
+
+        // Roll fail chance
+        float failRoll = Random.value;
+        bool failed = choice.failChance > 0f && failRoll < choice.failChance;
+        Debug.Log($"[PressureDirector] Resolved '{ev.eventName}' via '{choice.choiceLabel}' — " +
+                  $"rollResult={failRoll:F2} vs failChance={choice.failChance:F2} → {(failed ? "FAILED" : "SUCCESS")}");
+
+        if (failed)
+        {
+            // Apply fail consequence
+            if (choice.failConsequencePenalty != 0)
+                GameManager.Instance.AddCredits(choice.failConsequencePenalty); // negative = lose credits
+            GameManager.Instance.AddReputation(-5); // extra rep hit on failure
+            Debug.LogWarning($"[PressureDirector] Choice failed! Penalty applied.");
+        }
+
+        _activeEventCount = Mathf.Max(0, _activeEventCount - 1);
+        OnEventResolved?.Invoke(ev, choice, !failed);
+
+        // Cooldown before next event
+        float cooldown = config ? config.eventCooldownAfterResolve : 5f;
+        StartCoroutine(EventCooldown(cooldown));
+    }
+
+    // ── Internal ──────────────────────────────────────────────────────────
+    private void TierUp()
+    {
+        if (CurrentTier >= MAX_TIER) return;
+        SetTier(CurrentTier + 1);
+        StartCoroutine(GracePeriod(config ? config.graceAfterTierUp : 10f));
+    }
+
+    private void TierDown()
+    {
+        if (CurrentTier <= MIN_TIER) return;
+        SetTier(CurrentTier - 1);
+    }
+
+    private void SetTier(int t)
+    {
+        CurrentTier = Mathf.Clamp(t, MIN_TIER, MAX_TIER);
+        _nextEventTimer = IntervalForTier(CurrentTier);
         OnTierChanged?.Invoke(CurrentTier);
         Debug.Log($"[PressureDirector] Tier → {CurrentTier}");
     }
 
-    // ── Private ───────────────────────────────────────────────────────────
-    private void UpdateTier()
-    {
-        int newTier = 1;
-        if      (_timeElapsed >= tier5At) newTier = 5;
-        else if (_timeElapsed >= tier4At) newTier = 4;
-        else if (_timeElapsed >= tier3At) newTier = 3;
-        else if (_timeElapsed >= tier2At) newTier = 2;
-
-        if (newTier != CurrentTier) ForceSetTier(newTier);
-    }
-
     private void TriggerRandomEvent()
     {
-        var eligible = eventPool.FindAll(e => e.minPressureTier <= CurrentTier);
-        if (eligible.Count == 0) return;
+        int maxEvents = config ? config.maxConcurrentEvents : 2;
+        if (_activeEventCount >= maxEvents) { _nextEventTimer = 10f; return; }
 
-        // Weighted random selection
+        // Filter events eligible for current tier
+        var eligible = eventPool.FindAll(e => e.minPressureTier <= CurrentTier);
+        if (eligible.Count == 0) { _nextEventTimer = IntervalForTier(CurrentTier); return; }
+
+        // Weighted random pick
         float totalWeight = 0f;
-        foreach (var e in eligible) totalWeight += e.triggerProbabilityWeight;
-        float roll = Random.Range(0f, totalWeight);
-        float cumulative = 0f;
-        RandomEventData selected = eligible[0];
+        foreach (var e in eligible) totalWeight += Mathf.Max(e.triggerProbabilityWeight, 0.01f);
+        float roll = Random.value * totalWeight;
+        RandomEventData chosen = eligible[0];
         foreach (var e in eligible)
         {
-            cumulative += e.triggerProbabilityWeight;
-            if (roll <= cumulative) { selected = e; break; }
+            roll -= Mathf.Max(e.triggerProbabilityWeight, 0.01f);
+            if (roll <= 0f) { chosen = e; break; }
         }
 
-        EventActive = true;
-        StartCoroutine(TelegraphThenFire(selected));
+        _activeEventCount++;
+        _nextEventTimer = IntervalForTier(CurrentTier);
+        OnEventTriggered?.Invoke(chosen);
+        Debug.Log($"[PressureDirector] Event triggered: {chosen.eventName} (Tier {CurrentTier})");
+
+        // Play telegraph if needed
+        if (chosen.telegraphDuration > 0f) StartCoroutine(TelegraphDelay(chosen));
     }
 
-    private IEnumerator TelegraphThenFire(RandomEventData evt)
+    private IEnumerator TelegraphDelay(RandomEventData ev)
     {
-        yield return new WaitForSeconds(evt.telegraphDuration);
-        OnEventTriggered?.Invoke(evt);
-        Debug.Log($"[PressureDirector] Event fired: {evt.eventName}");
+        yield return new WaitForSeconds(ev.telegraphDuration);
+        // Second fire (with telegraph flag) handled by EventPopupUI listener
     }
 
-    private IEnumerator BlockProductionFor(float duration)
+    private IEnumerator GracePeriod(float seconds)
     {
-        ProductionManager.Instance.SetProcessABlocked(true);
-        ProductionManager.Instance.SetProcessBBlocked(true);
-        yield return new WaitForSeconds(duration);
-        ProductionManager.Instance.SetProcessABlocked(false);
-        ProductionManager.Instance.SetProcessBBlocked(false);
+        _graceActive = true;
+        yield return new WaitForSeconds(seconds);
+        _graceActive = false;
     }
 
-    private float GetCurrentInterval() => CurrentTier switch
+    private IEnumerator EventCooldown(float seconds)
     {
-        1 => tier1Interval,
-        2 => tier2Interval,
-        3 => tier3Interval,
-        4 => tier4Interval,
-        _ => tier5Interval
-    };
+        _graceActive = true;
+        yield return new WaitForSeconds(seconds);
+        _graceActive = false;
+        _nextEventTimer = IntervalForTier(CurrentTier);
+    }
 
-    private void OnGameStateChanged(GameManager.GameState state)
+    private IEnumerator StopProductionFor(float seconds)
     {
-        if (state == GameManager.GameState.Playing) _timeElapsed = 0f;
+        ProductionManager.Instance?.BlockAll(true);
+        yield return new WaitForSeconds(seconds);
+        ProductionManager.Instance?.BlockAll(false);
+    }
+
+    private float IntervalForTier(int tier)
+    {
+        if (!config) return 40f - (tier - 1) * 8f;
+        return tier switch
+        {
+            1 => config.tier1Interval,
+            2 => config.tier2Interval,
+            3 => config.tier3Interval,
+            4 => config.tier4Interval,
+            _ => config.tier5Interval,
+        };
     }
 }

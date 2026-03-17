@@ -47,6 +47,7 @@ public struct EventChoice
 
     [Header("Risk")]
     [Range(0f, 1f)] public float failChance;         // chance choice backfires
+    public int    failConsequencePenalty;            // extra credits lost on fail (negative = lose)
     public string failConsequenceDescription;
 }
 

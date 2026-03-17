@@ -4,38 +4,38 @@ using UnityEngine.Events;
 
 /// <summary>
 /// Machine — Represents a single Assembly or Paint machine in the factory.
-/// Can be clicked to start a production batch. Shows visual state (idle/running/blocked).
+/// Click to start a production batch. Delegates state changes to ProductionManager.
 /// </summary>
 public class Machine : MonoBehaviour
 {
-    public enum MachineType { AssemblyA, PaintPackB }
+    public enum MachineType  { AssemblyA, PaintPackB }
     public enum MachineState { Idle, Working, WaitingInput, Warning }
 
     [Header("Config")]
-    public MachineType machineType;
-    public ProductData assignedProduct; // set in Inspector or at runtime
-    public int batchQuantity = 1;
+    public MachineType  machineType;
+    public ProductData  assignedProduct;
+    public int          batchQuantity = 1;
 
     [Header("Visuals")]
-    public SpriteRenderer statusLight; // green = idle, yellow = running, red = blocked
-    public Animator machineAnimator;   // "Idle", "Running", "Broken" animation states
+    public SpriteRenderer statusLight;    // green=idle, yellow=waiting, red=warning, blue=working
+    public Animator       machineAnimator;
     public ParticleSystem dustParticles;
 
     [Header("Audio")]
     public AudioSource audioSource;
-    public AudioClip runningSound;
-    public AudioClip completeSound;
-    public AudioClip blockedSound;
+    public AudioClip   runningSound;
+    public AudioClip   completeSound;
+    public AudioClip   blockedSound;
 
     // ── State ─────────────────────────────────────────────────────────────
     public MachineState CurrentState { get; private set; }
-    public bool IsBlocked { get; private set; }
+    public bool         IsBlocked    { get; private set; }
 
-    // WIP item for PaintPackB, simulated queue if needed
-    public int WipQuantity { get; set; } = 0;
+    private Coroutine _currentCycle;
+    private Coroutine _pulseCycle;
+    private Vector3   _baseScale;
 
-    private Coroutine _currentCycleRoutine;
-
+    // ── Events ────────────────────────────────────────────────────────────
     public UnityEvent OnMachineStarted;
     public UnityEvent OnMachineCompleted;
     public UnityEvent OnMachineBlocked;
@@ -43,48 +43,54 @@ public class Machine : MonoBehaviour
     // ── Lifecycle ─────────────────────────────────────────────────────────
     private void Start()
     {
+        _baseScale = transform.localScale;
         SetState(MachineState.Idle);
 
-        // Subscribe to block events
         var pm = ProductionManager.Instance;
         if (pm != null)
         {
             pm.RegisterMachine(this);
-            pm.OnProductionABlocked.AddListener(() => { if (machineType == MachineType.AssemblyA)  SetBlocked(true); });
-            pm.OnProductionBBlocked.AddListener(() => { if (machineType == MachineType.PaintPackB) SetBlocked(true); });
+            pm.OnProductionABlocked.AddListener(() =>
+            {
+                if (machineType == MachineType.AssemblyA)  SetBlocked(true);
+            });
+            pm.OnProductionBBlocked.AddListener(() =>
+            {
+                if (machineType == MachineType.PaintPackB) SetBlocked(true);
+            });
         }
     }
 
     private void OnDestroy()
     {
-        var pm = ProductionManager.Instance;
-        if (pm != null)
-        {
-            pm.UnregisterMachine(this);
-        }
+        ProductionManager.Instance?.UnregisterMachine(this);
         StopCurrentCycle();
     }
 
-    // ── Interaction (click to start) ──────────────────────────────────────
-    private void OnMouseDown()
-    {
-        TryStartBatch();
-    }
+    // ── Interaction ───────────────────────────────────────────────────────
+    // Removed OnMouseDown - clicks are now handled by PlayerInteraction.cs via Raycast
 
     public bool TryStartBatch()
     {
-        if (CurrentState == MachineState.Working || IsBlocked || assignedProduct == null) return false;
-
-        if (machineType == MachineType.AssemblyA)
+        if (assignedProduct == null)
         {
-            return StartAssemblyCycle();
+            Debug.LogWarning($"[Machine:{name}] No product assigned! Assign a ProductData in Inspector.");
+            return false;
         }
-        else if (machineType == MachineType.PaintPackB)
+        if (IsBlocked)
         {
-            return StartPaintCycle();
+            Debug.LogWarning($"[Machine:{name}] Machine is BLOCKED.");
+            return false;
+        }
+        if (CurrentState == MachineState.Working)
+        {
+            Debug.Log($"[Machine:{name}] Already working, please wait...");
+            return false;
         }
 
-        return false;
+        Debug.Log($"[Machine:{name}] Starting {machineType} for '{assignedProduct.productName}'...");
+        return machineType == MachineType.AssemblyA ? StartAssemblyCycle()
+                                                    : StartPaintCycle();
     }
 
     // ── Production Cycles ─────────────────────────────────────────────────
@@ -98,45 +104,48 @@ public class Machine : MonoBehaviour
 
         if (rm.WoodPlastic < woodCost || rm.Power < powerCost || rm.AvailableWorkers <= 0)
         {
-            Debug.LogWarning($"[Machine: {gameObject.name}] Not enough resources (Wood/Power/Worker) for Assembly.");
+            Debug.LogWarning($"[Machine:{name}] Not enough resources for Assembly.");
             SetState(MachineState.Warning);
             return false;
         }
 
-        // Consume Resources
         rm.ConsumeWoodPlastic(woodCost);
         rm.ConsumePower(powerCost);
         rm.AssignWorker();
 
-        _currentCycleRoutine = StartCoroutine(AssemblyCycleRoutine());
+        _currentCycle = StartCoroutine(AssemblyCycleRoutine());
         return true;
     }
 
     private IEnumerator AssemblyCycleRoutine()
     {
         SetState(MachineState.Working);
-        float duration = assignedProduct.assemblyTime * batchQuantity * ProductionManager.Instance.GetProductionTimeMultiplier() / ProductionManager.Instance.GetSpeedMultiplier();
-        
+
+        float duration = assignedProduct.assemblyTime
+                       * batchQuantity
+                       * ProductionManager.Instance.GetProductionTimeMultiplier()
+                       / ProductionManager.Instance.GetSpeedMultiplier();
+
         yield return new WaitForSeconds(duration);
-        
-        // Output WIP item (For MVP, we just send to ProductionManager's Buffer)
-        ProductionManager.Instance.ReceiveWIP(new BatchJob(assignedProduct, batchQuantity, duration));
+
+        var job = new BatchJob(assignedProduct, batchQuantity, duration);
+        ProductionManager.Instance.ReceiveWIP(job);   // → fires OnBatchCompletedA
         ResourceManager.Instance.ReleaseWorker();
-        _currentCycleRoutine = null;
+
+        _currentCycle = null;
         OnBatchDone();
     }
 
     private bool StartPaintCycle()
     {
-        var rm = ResourceManager.Instance;
-        var pm = ProductionManager.Instance;
+        var rm  = ResourceManager.Instance;
+        var pm  = ProductionManager.Instance;
 
-        // B needs WIP item from Buffer (Or we can use WipQuantity if managing locally. Let's use PM's Buffer for now)
         BatchJob job = pm.DequeueWIP(assignedProduct);
         if (job == null)
         {
+            Debug.LogWarning($"[Machine:{name}] No WIP in buffer for Paint.");
             SetState(MachineState.WaitingInput);
-            Debug.LogWarning($"[Machine: {gameObject.name}] No WIP items in buffer for Paint.");
             return false;
         }
 
@@ -145,49 +154,51 @@ public class Machine : MonoBehaviour
 
         if (rm.PaintFabric < paintCost || rm.Power < powerCost || rm.AvailableWorkers <= 0)
         {
-            Debug.LogWarning($"[Machine: {gameObject.name}] Not enough resources (Paint/Power/Worker) for Paint.");
-            SetState(MachineState.Warning);
-            pm.ReturnWIP(job); // return it to the queue since we couldn't process it
-            return false;
-        }
-
-        if (rm.IsInventoryFull())
-        {
-            Debug.LogWarning($"[Machine: {gameObject.name}] Inventory is full! Blocking Paint production.");
+            Debug.LogWarning($"[Machine:{name}] Not enough resources for Paint.");
             SetState(MachineState.Warning);
             pm.ReturnWIP(job);
             return false;
         }
 
-        // Consume Resources
+        if (rm.IsInventoryFull())
+        {
+            Debug.LogWarning($"[Machine:{name}] Inventory full — Paint blocked.");
+            SetState(MachineState.Warning);
+            pm.ReturnWIP(job);
+            return false;
+        }
+
         rm.ConsumePaintFabric(paintCost);
         rm.ConsumePower(powerCost);
         rm.AssignWorker();
 
-        job.duration = job.product.paintPackTime * job.quantity * pm.GetProductionTimeMultiplier() / pm.GetSpeedMultiplier();
-        _currentCycleRoutine = StartCoroutine(PaintCycleRoutine(job));
+        job.duration = job.product.paintPackTime * job.quantity
+                     * pm.GetProductionTimeMultiplier()
+                     / pm.GetSpeedMultiplier();
+
+        _currentCycle = StartCoroutine(PaintCycleRoutine(job));
         return true;
     }
 
     private IEnumerator PaintCycleRoutine(BatchJob job)
     {
         SetState(MachineState.Working);
-        
         yield return new WaitForSeconds(job.duration);
-        
+
         ResourceManager.Instance.ReleaseWorker();
         ResourceManager.Instance.AddProduct(job.product, job.quantity);
 
-        if (ProductionManager.Instance.currentMode == ProductionManager.ProductionMode.Quality)
-        {
-            GameManager.Instance.AddReputation(ProductionManager.Instance.qualityReputationBonus * job.quantity);
-        }
+        var pm = ProductionManager.Instance;
+        if (pm.currentMode == ProductionManager.ProductionMode.Quality)
+            GameManager.Instance.AddReputation(pm.qualityReputationBonus * job.quantity);
 
-        _currentCycleRoutine = null;
+        pm.NotifyBatchCompletedB(job);   // → fires OnBatchCompletedB (consumed by OrderManager & UIManager)
+
+        _currentCycle = null;
         OnBatchDone();
     }
 
-    // ── Private ───────────────────────────────────────────────────────────
+    // ── Private Helpers ───────────────────────────────────────────────────
     private void OnBatchDone()
     {
         SetState(MachineState.Idle);
@@ -196,7 +207,7 @@ public class Machine : MonoBehaviour
         OnMachineCompleted?.Invoke();
     }
 
-    private void SetBlocked(bool blocked)
+    public void SetBlocked(bool blocked)
     {
         IsBlocked = blocked;
         if (blocked)
@@ -214,55 +225,56 @@ public class Machine : MonoBehaviour
 
     private void StopCurrentCycle()
     {
-        if (_currentCycleRoutine != null)
-        {
-            StopCoroutine(_currentCycleRoutine);
-            _currentCycleRoutine = null;
-            // Note: If interrupted, worker/resources are lost as penalty (design choice).
-            // We could refund them here if desired.
-        }
+        if (_currentCycle == null) return;
+        StopCoroutine(_currentCycle);
+        _currentCycle = null;
     }
 
     private void SetState(MachineState newState)
     {
         CurrentState = newState;
-        string animState = "Idle";
-        Color lightColor = Color.green;
+
+        string animState  = "Idle";
+        Color  lightColor = Color.green;
 
         switch (newState)
         {
             case MachineState.Working:
-                animState = "Running";
-                lightColor = Color.green; // Blinking logic or pulse can be handled by Animator
+                animState  = "Running";
+                lightColor = Color.blue;
                 if (dustParticles) dustParticles.Play();
                 PlaySound(runningSound, loop: true);
+                StartPulse();
                 OnMachineStarted?.Invoke();
                 break;
+
             case MachineState.Warning:
-                animState = "Idle"; // or specific Warning anim
+                animState  = "Idle";
                 lightColor = Color.red;
                 if (dustParticles) dustParticles.Stop();
                 StopSound();
                 break;
+
             case MachineState.WaitingInput:
-                animState = "Idle";
+                animState  = "Idle";
                 lightColor = Color.yellow;
                 if (dustParticles) dustParticles.Stop();
                 StopSound();
+                StopPulse();
                 break;
+
             case MachineState.Idle:
-                animState = "Idle";
-                lightColor = Color.gray; // Using Gray for Idle as requested
+                animState  = "Idle";
+                lightColor = Color.green;
                 if (dustParticles) dustParticles.Stop();
                 StopSound();
+                StopPulse();
                 break;
         }
 
         if (machineAnimator) machineAnimator.Play(animState);
-        if (statusLight) statusLight.color = lightColor;
+        if (statusLight)     statusLight.color = lightColor;
     }
-
-
 
     private void PlaySound(AudioClip clip, bool loop)
     {
@@ -275,5 +287,45 @@ public class Machine : MonoBehaviour
     private void StopSound()
     {
         if (audioSource) audioSource.Stop();
+    }
+
+    // ── Scale Pulse ───────────────────────────────────────────────────────
+    private void StartPulse()
+    {
+        StopPulse();
+        _pulseCycle = StartCoroutine(PulseScale());
+    }
+
+    private void StopPulse()
+    {
+        if (_pulseCycle != null) { StopCoroutine(_pulseCycle); _pulseCycle = null; }
+        transform.localScale = _baseScale;
+    }
+
+    private IEnumerator PulseScale()
+    {
+        const float PULSE_TIME = 0.4f;
+        const float PEAK       = 1.07f;
+        while (true)
+        {
+            // scale up
+            float t = 0f;
+            while (t < PULSE_TIME / 2f)
+            {
+                t += Time.deltaTime;
+                float s = Mathf.Lerp(1f, PEAK, t / (PULSE_TIME / 2f));
+                transform.localScale = _baseScale * s;
+                yield return null;
+            }
+            // scale down
+            t = 0f;
+            while (t < PULSE_TIME / 2f)
+            {
+                t += Time.deltaTime;
+                float s = Mathf.Lerp(PEAK, 1f, t / (PULSE_TIME / 2f));
+                transform.localScale = _baseScale * s;
+                yield return null;
+            }
+        }
     }
 }

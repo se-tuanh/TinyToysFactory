@@ -188,6 +188,11 @@ public class ResourceManager : MonoBehaviour
         return _inventory.ContainsKey(product) && _inventory[product] >= amount;
     }
 
+    public int GetProductCount(ProductData product)
+    {
+        return _inventory.ContainsKey(product) ? _inventory[product] : 0;
+    }
+
     public bool RemoveProduct(ProductData product, int amount)
     {
         if (!HasProduct(product, amount)) return false;

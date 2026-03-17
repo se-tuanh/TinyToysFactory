@@ -13,8 +13,12 @@ public class GameManager : MonoBehaviour
     public enum GameState { MainMenu, Playing, Paused, Win, Lose }
     public GameState CurrentState { get; private set; } = GameState.MainMenu;
 
-    [Header("Session Config")]
-    public float sessionDuration = 180f; // 3:00 default per order
+    [Header("Config (assign GameplayConfig SO)")]
+    public GameplayConfig config;
+
+    [Header("Session Config (used if no config SO)")]
+    public float sessionDuration = 180f;
+    public bool  autoStart       = true;
     public float TimeRemaining { get; private set; }
 
     [Header("Economy")]
@@ -35,7 +39,12 @@ public class GameManager : MonoBehaviour
     {
         if (Instance != null && Instance != this) { Destroy(gameObject); return; }
         Instance = this;
-        DontDestroyOnLoad(gameObject);
+    }
+
+    private void Start()
+    {
+        // Auto-start for MVP testing — set autoStart = false to use MainMenuController trigger
+        if (autoStart) StartGame();
     }
 
     private void Update()
@@ -55,10 +64,12 @@ public class GameManager : MonoBehaviour
     // ── Public API ───────────────────────────────────────────────────────
     public void StartGame()
     {
-        TimeRemaining = sessionDuration;
-        Credits = 200;
-        Reputation = 100;
+        // Read from config SO if assigned
+        TimeRemaining = config ? config.sessionDuration  : sessionDuration;
+        Credits       = config ? config.startingCredits  : 200;
+        Reputation    = config ? config.startingReputation : 100;
         ChangeState(GameState.Playing);
+        Debug.Log("[GameManager] Game started");
     }
 
     public void PauseGame()
@@ -104,6 +115,7 @@ public class GameManager : MonoBehaviour
     public void TriggerWin()
     {
         ChangeState(GameState.Win);
+        SaveSystem.SaveHighScore(Credits, Reputation);
         OnGameWin?.Invoke();
     }
 
@@ -111,6 +123,7 @@ public class GameManager : MonoBehaviour
     {
         Debug.Log($"[GameManager] LOSE: {reason}");
         ChangeState(GameState.Lose);
+        SaveSystem.SaveHighScore(Credits, Reputation); // save even on lose
         OnGameLose?.Invoke();
     }
 
