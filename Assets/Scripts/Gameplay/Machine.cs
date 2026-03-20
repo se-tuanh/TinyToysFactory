@@ -35,6 +35,12 @@ public class Machine : MonoBehaviour
     private Coroutine _pulseCycle;
     private Vector3   _baseScale;
 
+    public bool  HasWorker { get; private set; }
+    public float Progress => _totalDuration > 0f ? Mathf.Clamp01(_elapsedTime / _totalDuration) : 0f;
+
+    private float _elapsedTime;
+    private float _totalDuration;
+
     // ── Events ────────────────────────────────────────────────────────────
     public UnityEvent OnMachineStarted;
     public UnityEvent OnMachineCompleted;
@@ -63,12 +69,41 @@ public class Machine : MonoBehaviour
 
     private void OnDestroy()
     {
+        if (HasWorker) ResourceManager.Instance?.ReleaseWorker();
         ProductionManager.Instance?.UnregisterMachine(this);
         StopCurrentCycle();
     }
 
     // ── Interaction ───────────────────────────────────────────────────────
-    // Removed OnMouseDown - clicks are now handled by PlayerInteraction.cs via Raycast
+    public void ToggleWorker()
+    {
+        if (HasWorker)
+        {
+            ResourceManager.Instance.ReleaseWorker();
+            HasWorker = false;
+            if (CurrentState == MachineState.Working) SetState(MachineState.WaitingInput); // pause visuals
+            Debug.Log($"[Machine:{name}] Worker removed.");
+        }
+        else
+        {
+            if (ResourceManager.Instance.AssignWorker())
+            {
+                HasWorker = true;
+                if (_currentCycle != null) SetState(MachineState.Working); // resume visuals
+                else TryStartBatch(); // Idle -> try to find work immediately
+                Debug.Log($"[Machine:{name}] Worker assigned.");
+            }
+        }
+    }
+
+    public void SpeedUp()
+    {
+        if (CurrentState == MachineState.Working && HasWorker)
+        {
+            _elapsedTime += 0.5f; // Jump forward 0.5s per click
+            // Optional: spawn particle or flash
+        }
+    }
 
     public bool TryStartBatch()
     {
@@ -82,9 +117,13 @@ public class Machine : MonoBehaviour
             Debug.LogWarning($"[Machine:{name}] Machine is BLOCKED.");
             return false;
         }
+        if (!HasWorker)
+        {
+            Debug.Log($"[Machine:{name}] Cannot start without a worker.");
+            return false;
+        }
         if (CurrentState == MachineState.Working)
         {
-            Debug.Log($"[Machine:{name}] Already working, please wait...");
             return false;
         }
 
@@ -102,7 +141,7 @@ public class Machine : MonoBehaviour
         int woodCost  = Mathf.RoundToInt(assignedProduct.woodPlasticCost * batchQuantity * pm.GetCostMultiplier());
         int powerCost = assignedProduct.powerPerAssembly * batchQuantity;
 
-        if (rm.WoodPlastic < woodCost || rm.Power < powerCost || rm.AvailableWorkers <= 0)
+        if (rm.WoodPlastic < woodCost || rm.Power < powerCost)
         {
             Debug.LogWarning($"[Machine:{name}] Not enough resources for Assembly.");
             SetState(MachineState.Warning);
@@ -111,7 +150,6 @@ public class Machine : MonoBehaviour
 
         rm.ConsumeWoodPlastic(woodCost);
         rm.ConsumePower(powerCost);
-        rm.AssignWorker();
 
         _currentCycle = StartCoroutine(AssemblyCycleRoutine());
         return true;
@@ -121,16 +159,20 @@ public class Machine : MonoBehaviour
     {
         SetState(MachineState.Working);
 
-        float duration = assignedProduct.assemblyTime
+        _totalDuration = assignedProduct.assemblyTime
                        * batchQuantity
                        * ProductionManager.Instance.GetProductionTimeMultiplier()
                        / ProductionManager.Instance.GetSpeedMultiplier();
+        _elapsedTime = 0f;
 
-        yield return new WaitForSeconds(duration);
+        while (_elapsedTime < _totalDuration)
+        {
+            if (HasWorker) _elapsedTime += Time.deltaTime;
+            yield return null;
+        }
 
-        var job = new BatchJob(assignedProduct, batchQuantity, duration);
+        var job = new BatchJob(assignedProduct, batchQuantity, _totalDuration);
         ProductionManager.Instance.ReceiveWIP(job);   // → fires OnBatchCompletedA
-        ResourceManager.Instance.ReleaseWorker();
 
         _currentCycle = null;
         OnBatchDone();
@@ -152,7 +194,7 @@ public class Machine : MonoBehaviour
         int paintCost = Mathf.RoundToInt(job.product.paintFabricCost * job.quantity * pm.GetCostMultiplier());
         int powerCost = job.product.powerPerPaint * job.quantity;
 
-        if (rm.PaintFabric < paintCost || rm.Power < powerCost || rm.AvailableWorkers <= 0)
+        if (rm.PaintFabric < paintCost || rm.Power < powerCost)
         {
             Debug.LogWarning($"[Machine:{name}] Not enough resources for Paint.");
             SetState(MachineState.Warning);
@@ -170,7 +212,6 @@ public class Machine : MonoBehaviour
 
         rm.ConsumePaintFabric(paintCost);
         rm.ConsumePower(powerCost);
-        rm.AssignWorker();
 
         job.duration = job.product.paintPackTime * job.quantity
                      * pm.GetProductionTimeMultiplier()
@@ -183,9 +224,15 @@ public class Machine : MonoBehaviour
     private IEnumerator PaintCycleRoutine(BatchJob job)
     {
         SetState(MachineState.Working);
-        yield return new WaitForSeconds(job.duration);
+        _totalDuration = job.duration;
+        _elapsedTime = 0f;
 
-        ResourceManager.Instance.ReleaseWorker();
+        while (_elapsedTime < _totalDuration)
+        {
+            if (HasWorker) _elapsedTime += Time.deltaTime;
+            yield return null;
+        }
+
         ResourceManager.Instance.AddProduct(job.product, job.quantity);
 
         var pm = ProductionManager.Instance;
@@ -205,6 +252,17 @@ public class Machine : MonoBehaviour
         StopSound();
         PlaySound(completeSound, loop: false);
         OnMachineCompleted?.Invoke();
+
+        // ── Order-driven: auto-continue if there is a queued task for this product ──
+        if (assignedProduct != null && machineType == MachineType.AssemblyA)
+        {
+            var task = ProductionManager.Instance?.DequeueTask(assignedProduct);
+            if (task != null)
+            {
+                Debug.Log($"[Machine:{name}] Auto-starting next batch for order '{task.order?.orderName}'");
+                TryStartBatch();
+            }
+        }
     }
 
     public void SetBlocked(bool blocked)

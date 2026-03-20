@@ -4,8 +4,11 @@ using UnityEngine;
 using UnityEngine.Events;
 
 /// <summary>
-/// ProductionManager — Controls production flow between Process A (Assembly) and B (Paint & Pack).
+/// ProductionManager — Controls production flow between Process A (Assembly) and B (Paint &amp; Pack).
 /// Fires batch-complete events consumed by OrderManager and UIManager.
+///
+/// NEW: ProductionQueue — player enqueues ProductionTasks for specific orders.
+/// Machines pick up tasks automatically when idle (order-driven mode).
 /// </summary>
 public class ProductionManager : MonoBehaviour
 {
@@ -27,8 +30,11 @@ public class ProductionManager : MonoBehaviour
     public int maxBufferSize = 5; // batches waiting between A and B
 
     // ── Management State ─────────────────────────────────────────────────
-    private List<Machine>   _registeredMachines = new List<Machine>();
-    private Queue<BatchJob> _wipBuffer          = new Queue<BatchJob>(); // A → B buffer
+    private List<Machine>    _registeredMachines = new List<Machine>();
+    private Queue<BatchJob>  _wipBuffer          = new Queue<BatchJob>(); // A → B buffer
+
+    // ── Production Queue (order-driven) ──────────────────────────────────
+    private List<ProductionTask> _productionQueue = new List<ProductionTask>();
 
     // ── Process State ────────────────────────────────────────────────────
     public bool IsProcessABlocked { get; private set; }
@@ -42,6 +48,8 @@ public class ProductionManager : MonoBehaviour
     public UnityEvent<BatchJob> OnBatchCompletedB;     // Paint&Pack batch done → product in inventory
     public UnityEvent           OnProductionABlocked;
     public UnityEvent           OnProductionBBlocked;
+    /// <summary>Fires whenever the production queue changes (for UI).</summary>
+    public UnityEvent<IReadOnlyList<ProductionTask>> OnQueueChanged;
 
     // ── Lifecycle ────────────────────────────────────────────────────────
     private void Awake()
@@ -108,7 +116,78 @@ public class ProductionManager : MonoBehaviour
     /// <summary>Called by Machine.PaintPackB when a batch finishes.</summary>
     public void NotifyBatchCompletedB(BatchJob job)
     {
+        // Decrement scheduled count on matching queued task
+        var task = _productionQueue.Find(t => t.product == job.product && t.order != null);
+        if (task != null)
+        {
+            task.quantityScheduled = Mathf.Max(0, task.quantityScheduled - job.quantity);
+            // If fully produced, remove from queue
+            if (task.quantityScheduled <= 0 && task.quantityNeeded <= 0)
+            {
+                _productionQueue.Remove(task);
+                FireQueueChanged();
+            }
+        }
+
         OnBatchCompletedB?.Invoke(job);
+    }
+
+    // ── Production Queue (order-driven) ──────────────────────────────────
+
+    /// <summary>Read-only view of the current production queue.</summary>
+    public IReadOnlyList<ProductionTask> ProductionQueue => _productionQueue;
+
+    /// <summary>
+    /// Enqueue a production task for a specific order.
+    /// If a task for the same order+product already exists, adds to its quantity.
+    /// </summary>
+    public void EnqueueTask(ProductionTask task)
+    {
+        if (task == null || task.product == null || task.quantityNeeded <= 0) return;
+
+        var existing = _productionQueue.Find(t => t.order == task.order && t.product == task.product);
+        if (existing != null)
+        {
+            existing.quantityNeeded += task.quantityNeeded;
+            Debug.Log($"[ProductionManager] Task updated: {task.product.productName} for '{task.order?.orderName}' +{task.quantityNeeded}");
+        }
+        else
+        {
+            _productionQueue.Add(task);
+            Debug.Log($"[ProductionManager] Task enqueued: {task.product.productName} ×{task.quantityNeeded} for '{task.order?.orderName}'");
+        }
+
+        FireQueueChanged();
+    }
+
+    /// <summary>
+    /// Machines call this when idle to pick up a task.
+    /// Returns null if no pending task exists for this product.
+    /// </summary>
+    public ProductionTask DequeueTask(ProductData product)
+    {
+        for (int i = 0; i < _productionQueue.Count; i++)
+        {
+            var task = _productionQueue[i];
+            if (task.product == product && task.quantityNeeded > task.quantityScheduled)
+            {
+                task.quantityScheduled += task.quantityNeeded - task.quantityScheduled; // mark all as scheduled
+                FireQueueChanged();
+                return task;
+            }
+        }
+        return null;
+    }
+
+    /// <summary>Remove all queued tasks for a specific order (called on expire/cancel).</summary>
+    public void CancelTasksForOrder(OrderData order)
+    {
+        int removed = _productionQueue.RemoveAll(t => t.order == order);
+        if (removed > 0)
+        {
+            FireQueueChanged();
+            Debug.Log($"[ProductionManager] Cancelled {removed} task(s) for expired order '{order.orderName}'.");
+        }
     }
 
     // ── Blocking ─────────────────────────────────────────────────────────
@@ -175,6 +254,11 @@ public class ProductionManager : MonoBehaviour
         foreach (var m in _registeredMachines)
             m.SetBlocked(blocked);
     }
+
+    private void FireQueueChanged()
+    {
+        OnQueueChanged?.Invoke(_productionQueue);
+    }
 }
 
 // ── BatchJob ──────────────────────────────────────────────────────────────────
@@ -190,5 +274,29 @@ public class BatchJob
         this.product  = product;
         this.quantity = quantity;
         this.duration = duration;
+    }
+}
+
+// ── ProductionTask ────────────────────────────────────────────────────────────
+/// <summary>
+/// Represents a player-initiated production task linked to an order.
+/// Machines consume tasks from the ProductionQueue when idle.
+/// </summary>
+[System.Serializable]
+public class ProductionTask
+{
+    public OrderData   order;           // which order this task fulfils (null = free production)
+    public ProductData product;         // what to produce
+    public int         quantityNeeded;  // total units to produce
+    public int         quantityScheduled; // units already picked up by a machine
+
+    public int Remaining => Mathf.Max(0, quantityNeeded - quantityScheduled);
+
+    public ProductionTask(OrderData order, ProductData product, int quantity)
+    {
+        this.order            = order;
+        this.product          = product;
+        this.quantityNeeded   = quantity;
+        this.quantityScheduled = 0;
     }
 }

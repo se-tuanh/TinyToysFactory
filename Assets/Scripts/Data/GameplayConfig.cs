@@ -9,21 +9,21 @@ using UnityEngine;
 public class GameplayConfig : ScriptableObject
 {
     [Header("Session")]
-    public float sessionDuration      = 180f; // seconds per game
-    public int   startingCredits      = 200;
+    public float sessionDuration      = 300f; // seconds per game (5 minutes)
+    public int   startingCredits      = 400;
     public int   startingReputation   = 100;
     public int   reputationLoseAt     = 0;
 
     [Header("Resources")]
-    public int   startingWoodPlastic  = 50;
-    public int   startingPaintFabric  = 50;
-    public int   maxWoodPlastic       = 100;
-    public int   maxPaintFabric       = 100;
-    public int   maxPower             = 100;
+    public int   startingWoodPlastic  = 150;
+    public int   startingPaintFabric  = 150;
+    public int   maxWoodPlastic       = 200;
+    public int   maxPaintFabric       = 200;
+    public int   maxPower             = 300;
     public int   maxWorkers           = 3;
     public int   maxInventory         = 50;
-    public float autoRestockInterval  = 60f;
-    public int   restockAmount        = 30;
+    public float autoRestockInterval  = 45f;
+    public int   restockAmount        = 40;
     public int   emergencyBuyCost     = 50;
     public int   emergencyBuyAmount   = 25;
 
@@ -32,6 +32,10 @@ public class GameplayConfig : ScriptableObject
     public int   maxActiveOrders      = 3;
     [Tooltip("Reputation penalty when an order expires")]
     public int   orderExpireRepPenalty = 10;
+    [Tooltip("Number of orders shown in the pending pool for player to pick from")]
+    public int   maxPendingOrders     = 4;
+    [Tooltip("When true, player must manually accept orders; no auto-accept")]
+    public bool  allowManualOnlyAccept = true;
 
     [Header("Pressure Director — Tier Thresholds (elapsed seconds)")]
     public float tier2At = 60f;

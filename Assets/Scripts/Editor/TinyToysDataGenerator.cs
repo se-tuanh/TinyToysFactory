@@ -18,11 +18,11 @@ public class TinyToysDataGenerator : EditorWindow
         // CreateProduct(fileName, productName, woodCost, paintCost, assemblyTime, paintTime,
         //               powerPerAssembly, powerPerPaint, baseCredits, repValue, tier)
         ProductData toyCar = CreateProduct(
-            "Product_ToyCar",  "Toy Car",      10, 8,  8f,  6f,  30, 20, 50,  5, ProductTier.Simple);
+            "Product_ToyCar",  "Toy Car",      3,  2,  2f,  2f,   8,  6, 50,  5, ProductTier.Simple);
         ProductData robot = CreateProduct(
-            "Product_Robot",   "Robot",        15, 12, 12f, 10f, 40, 30, 90,  8, ProductTier.Medium);
+            "Product_Robot",   "Robot",        5,  4,  3f,  3f,  12, 10, 90,  8, ProductTier.Medium);
         ProductData doll = CreateProduct(
-            "Product_Doll",    "Luxury Doll",  20, 18, 18f, 14f, 50, 40, 140, 12, ProductTier.Premium);
+            "Product_Doll",    "Luxury Doll",  8,  6,  4f,  4f,  15, 12, 140, 12, ProductTier.Premium);
 
         // ── 2. Orders ────────────────────────────────────────────────────
         CreateOrder("Order_ToyKingdom1", "Toy Kingdom Rush",  ClientFaction.ToyKingdom,  120f,
@@ -52,6 +52,10 @@ public class TinyToysDataGenerator : EditorWindow
             "Surprise order! Extra products needed fast.", EventType.BulkOrderSpike, tier: 3);
         CreateEvent("Event_WorkerExhaustion", "Worker Exhaustion",
             "The team is tired. Production slowing down.", EventType.WorkerExhaustion, tier: 2);
+
+        // ── 4. Global Config ─────────────────────────────────────────────
+        var config = ScriptableObject.CreateInstance<GameplayConfig>();
+        AssetDatabase.CreateAsset(config, "Assets/ScriptableObjects/GameplayConfig.asset");
 
         AssetDatabase.SaveAssets();
         AssetDatabase.Refresh();

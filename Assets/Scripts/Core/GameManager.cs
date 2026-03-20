@@ -17,12 +17,12 @@ public class GameManager : MonoBehaviour
     public GameplayConfig config;
 
     [Header("Session Config (used if no config SO)")]
-    public float sessionDuration = 180f;
+    public float sessionDuration = 300f; // 5 minutes
     public bool  autoStart       = true;
     public float TimeRemaining { get; private set; }
 
     [Header("Economy")]
-    public int Credits { get; private set; } = 200;
+    public int Credits { get; private set; } = 400;
     public int Reputation { get; private set; } = 100;
     public int reputationLoseThreshold = 0; // lose if reputation hits 0
 
@@ -66,7 +66,7 @@ public class GameManager : MonoBehaviour
     {
         // Read from config SO if assigned
         TimeRemaining = config ? config.sessionDuration  : sessionDuration;
-        Credits       = config ? config.startingCredits  : 200;
+        Credits       = config ? config.startingCredits  : 400;
         Reputation    = config ? config.startingReputation : 100;
         ChangeState(GameState.Playing);
         Debug.Log("[GameManager] Game started");

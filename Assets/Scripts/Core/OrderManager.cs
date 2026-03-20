@@ -3,8 +3,10 @@ using UnityEngine;
 using UnityEngine.Events;
 
 /// <summary>
-/// OrderManager — Manages multiple concurrent active orders with deadline countdowns.
-/// Faction bonuses applied on FulfillOrder(): FlashDeals, PrestigyPlay, ToyKingdom.
+/// OrderManager — Manages pending and active orders.
+/// • Pending pool: orders shown on the board waiting for the player to accept.
+/// • Active orders: deadline is counting down; player must deliver before time runs out.
+/// If config.allowManualOnlyAccept is false, old auto-accept behaviour is preserved.
 /// </summary>
 public class OrderManager : MonoBehaviour
 {
@@ -24,6 +26,8 @@ public class OrderManager : MonoBehaviour
     // (orderData, timeRemaining, totalTime) — for deadline bar UI
     public UnityEvent<OrderData, float, float> OnDeadlineTick;
     public UnityEvent<string, int, int>        OnProgressUpdated; // productName, shipped, required
+    /// <summary>Fires whenever the pending pool changes so UI can refresh.</summary>
+    public UnityEvent                          OnPendingOrdersChanged;
 
     // ── State ─────────────────────────────────────────────────────────────
     // Active order wrapper tracking deadline
@@ -35,7 +39,12 @@ public class OrderManager : MonoBehaviour
     }
 
     private List<ActiveOrder> _active      = new List<ActiveOrder>();
-    private int               _maxActive   => config ? config.maxActiveOrders : 3;
+    private List<OrderData>   _pending     = new List<OrderData>(); // waiting for player to accept
+
+    private int _maxActive   => config ? config.maxActiveOrders  : 3;
+    private int _maxPending  => config ? config.maxPendingOrders  : 4;
+    private bool _manualOnly => config ? config.allowManualOnlyAccept : true;
+
     private int _consecutiveGoodDeliveries = 0;
 
     // ── Lifecycle ─────────────────────────────────────────────────────────
@@ -48,8 +57,8 @@ public class OrderManager : MonoBehaviour
     private void Start()
     {
         ProductionManager.Instance.OnBatchCompletedB.AddListener(OnBatchReady);
-        GameManager.Instance.OnGameLose.AddListener(() => _active.Clear());
-        AutoAcceptNextOrder();
+        GameManager.Instance.OnGameLose.AddListener(() => { _active.Clear(); _pending.Clear(); });
+        RefreshPendingPool();
     }
 
     private void Update()
@@ -66,13 +75,67 @@ public class OrderManager : MonoBehaviour
             {
                 ExpireOrder(ao);
                 _active.RemoveAt(i);
-                // Try to fill the slot
-                AutoAcceptNextOrder();
+                // Replenish pending pool
+                RefreshPendingPool();
             }
         }
     }
 
     // ── Public API ────────────────────────────────────────────────────────
+
+    /// <summary>Expose the current pending pool (read-only view).</summary>
+    public IReadOnlyList<OrderData> PendingOrders => _pending;
+
+    /// <summary>Expose the active orders' OrderData (read-only).</summary>
+    public IReadOnlyList<OrderData> GetActiveOrderData()
+    {
+        var list = new List<OrderData>(_active.Count);
+        foreach (var ao in _active) list.Add(ao.order);
+        return list;
+    }
+
+    /// <summary>
+    /// Player manually accepts an order from the pending pool.
+    /// Deadline starts now.
+    /// </summary>
+    public bool AcceptOrderManually(OrderData order)
+    {
+        if (!_pending.Contains(order))
+        {
+            Debug.LogWarning($"[OrderManager] {order.orderName} is not in pending pool.");
+            return false;
+        }
+        if (_active.Count >= _maxActive)
+        {
+            Debug.LogWarning("[OrderManager] Active order slots full. Finish or wait for an order to expire.");
+            return false;
+        }
+
+        _pending.Remove(order);
+        OnPendingOrdersChanged?.Invoke();
+
+        return AcceptOrder(order);
+    }
+
+    /// <summary>
+    /// Returns how many units of a product still need to be delivered for the given order.
+    /// Returns -1 if order is not active.
+    /// </summary>
+    public int GetRemainingQuantity(OrderData order, ProductData product)
+    {
+        var ao = _active.Find(a => a.order == order);
+        if (ao == null) return -1;
+
+        foreach (var req in order.requiredProducts)
+        {
+            if (req.product == product)
+            {
+                int shipped = ao.shipped.TryGetValue(product.productName, out int s) ? s : 0;
+                return Mathf.Max(0, req.quantity - shipped);
+            }
+        }
+        return 0;
+    }
 
     /// <summary>Accept a new order if capacity allows.</summary>
     public bool AcceptOrder(OrderData order)
@@ -94,21 +157,6 @@ public class OrderManager : MonoBehaviour
         return true;
     }
 
-    /// <summary>Auto-fill active order slots from the pool.</summary>
-    public void AutoAcceptNextOrder()
-    {
-        if (_active.Count >= _maxActive) return;
-        int tier = PressureDirector.Instance ? PressureDirector.Instance.CurrentTier : 1;
-
-        foreach (var order in availableOrders)
-        {
-            if (_active.Count >= _maxActive) break;
-            if (_active.Exists(a => a.order == order)) continue;
-            if (order.minPressureTier <= tier)
-                AcceptOrder(order);
-        }
-    }
-
     /// <summary>Try to fulfill an order using current inventory.</summary>
     public bool FulfillOrder(OrderData order)
     {
@@ -118,7 +166,11 @@ public class OrderManager : MonoBehaviour
         var rm = ResourceManager.Instance;
         // Check
         foreach (var req in order.requiredProducts)
-            if (!rm.HasProduct(req.product, req.quantity)) { Debug.LogWarning($"[OrderManager] Not enough {req.product.productName}."); return false; }
+            if (!rm.HasProduct(req.product, req.quantity))
+            {
+                Debug.LogWarning($"[OrderManager] Not enough {req.product.productName}.");
+                return false;
+            }
 
         // Consume
         foreach (var req in order.requiredProducts)
@@ -142,7 +194,6 @@ public class OrderManager : MonoBehaviour
                 break;
 
             case ClientFaction.ToyKingdom:
-                // ToyKingdom bulk bonus: bonus if ALL products in one go (inventory had all at once)
                 credits += config ? config.toyKingdomBulkBonus : 30;
                 break;
         }
@@ -154,19 +205,49 @@ public class OrderManager : MonoBehaviour
         GameManager.Instance.AddReputation(order.reputationReward);
 
         _consecutiveGoodDeliveries++;
-        // Tell PressureDirector about good streak
         PressureDirector.Instance?.RegisterGoodDelivery();
 
         _active.Remove(ao);
         OnOrderCompleted?.Invoke(order);
         Debug.Log($"[OrderManager] Fulfilled: {order.orderName} | +{credits} credits");
 
-        // Fill the vacated slot
-        AutoAcceptNextOrder();
+        // Replenish pending pool
+        RefreshPendingPool();
         return true;
     }
 
     // ── Private ───────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Fill the pending pool from availableOrders.
+    /// If allowManualOnlyAccept == false, also auto-accepts into active slots (legacy mode).
+    /// </summary>
+    public void RefreshPendingPool()
+    {
+        int tier = PressureDirector.Instance ? PressureDirector.Instance.CurrentTier : 1;
+
+        foreach (var order in availableOrders)
+        {
+            if (_pending.Count >= _maxPending) break;
+            if (_pending.Contains(order)) continue;
+            if (_active.Exists(a => a.order == order)) continue;
+            if (order.minPressureTier > tier) continue;
+
+            if (_manualOnly)
+            {
+                // Add to pending pool — player decides when to accept
+                _pending.Add(order);
+                OnPendingOrdersChanged?.Invoke();
+            }
+            else
+            {
+                // Legacy: auto-accept into active
+                if (_active.Count < _maxActive)
+                    AcceptOrder(order);
+            }
+        }
+    }
+
     private void OnBatchReady(BatchJob job)
     {
         foreach (var ao in _active)
@@ -189,6 +270,9 @@ public class OrderManager : MonoBehaviour
 
     private void ExpireOrder(ActiveOrder ao)
     {
+        // Cancel any pending production tasks for this order
+        ProductionManager.Instance?.CancelTasksForOrder(ao.order);
+
         int penalty = config ? config.orderExpireRepPenalty : 10;
         GameManager.Instance.AddReputation(-penalty);
         _consecutiveGoodDeliveries = 0;

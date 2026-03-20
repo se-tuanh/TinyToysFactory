@@ -65,9 +65,9 @@ public class UIManager : MonoBehaviour
         gm.OnTimeChanged.AddListener(UpdateTimer);
 
         // Resources
-        rm.OnWoodPlasticChanged.AddListener(v => UpdateResourceBar(woodPlasticText, woodFillBar, v, rm.maxWoodPlastic));
-        rm.OnPaintFabricChanged.AddListener(v => UpdateResourceBar(paintFabricText, paintFillBar, v, rm.maxPaintFabric));
-        rm.OnPowerChanged      .AddListener(v => UpdateResourceBar(powerText,       powerFillBar, v, rm.maxPower));
+        rm.OnWoodPlasticChanged.AddListener(v => UpdateResourceBar(woodPlasticText, woodFillBar, v, rm.maxWoodPlastic, "Wood: "));
+        rm.OnPaintFabricChanged.AddListener(v => UpdateResourceBar(paintFabricText, paintFillBar, v, rm.maxPaintFabric, "Paint: "));
+        rm.OnPowerChanged      .AddListener(v => UpdateResourceBar(powerText,       powerFillBar, v, rm.maxPower, "Power: "));
         rm.OnWorkersChanged    .AddListener(v => { if (workerText) workerText.text = $"Workers: {v}/{rm.maxWorkers}"; });
         rm.OnMaterialCritical  .AddListener(() => StartCoroutine(FlashBars()));
 
@@ -117,9 +117,9 @@ public class UIManager : MonoBehaviour
         if (timerFillBar) timerFillBar.fillAmount = remaining / _totalTime;
     }
 
-    private void UpdateResourceBar(TextMeshProUGUI label, Image bar, int value, int max)
+    private void UpdateResourceBar(TextMeshProUGUI label, Image bar, int value, int max, string prefix)
     {
-        if (label) label.text = $"{value}/{max}";
+        if (label) label.text = $"{prefix}{value}/{max}";
         if (bar)   bar.fillAmount = (float)value / max;
     }
 

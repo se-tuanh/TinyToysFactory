@@ -37,7 +37,14 @@ public class PlayerInteraction : MonoBehaviour
                 Machine machine = hit.collider.GetComponent<Machine>();
                 if (machine != null)
                 {
-                    machine.TryStartBatch();
+                    if (machine.CurrentState == Machine.MachineState.Working)
+                    {
+                        machine.SpeedUp();
+                    }
+                    else
+                    {
+                        machine.TryStartBatch();
+                    }
                 }
             }
         }
