@@ -1,0 +1,59 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8a3954dd67298ca4ba2ef497b716cf22, type: 3}
+  m_Name: Event_PowerSurge
+  m_EditorClassIdentifier: 
+  eventName: Power Surge
+  eventDescription: A sudden surge damaged our generators!
+  eventIcon: {fileID: 0}
+  eventType: 3
+  minPressureTier: 1
+  triggerProbabilityWeight: 1
+  prioritize:
+    choiceLabel: Push Through
+    choiceDescription: "Keep going \u2014 risk some damage."
+    timeCost: 0
+    materialCost: 0
+    creditCost: 0
+    workerCost: 0
+    productionStopDuration: 0
+    reputationChange: -5
+    pressureTierChange: 0
+    failChance: 0.3
+    failConsequenceDescription: 
+  repair:
+    choiceLabel: Stop & Repair
+    choiceDescription: Fix it properly.
+    timeCost: 0
+    materialCost: 0
+    creditCost: 0
+    workerCost: 0
+    productionStopDuration: 10
+    reputationChange: 5
+    pressureTierChange: 0
+    failChance: 0
+    failConsequenceDescription: 
+  trade:
+    choiceLabel: Spend Credits
+    choiceDescription: Pay to resolve instantly.
+    timeCost: 0
+    materialCost: 0
+    creditCost: 50
+    workerCost: 0
+    productionStopDuration: 0
+    reputationChange: 0
+    pressureTierChange: 0
+    failChance: 0
+    failConsequenceDescription: 
+  telegraphDuration: 1.5
+  telegraphSound: {fileID: 0}
+  resolveSound: {fileID: 0}

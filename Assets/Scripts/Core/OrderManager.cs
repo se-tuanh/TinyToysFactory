@@ -3,7 +3,10 @@ using UnityEngine;
 using UnityEngine.Events;
 
 /// <summary>
-/// OrderManager — Handles incoming orders, tracks progress, and ships completed batches.
+/// OrderManager — Manages pending and active orders.
+/// • Pending pool: orders shown on the board waiting for the player to accept.
+/// • Active orders: deadline is counting down; player must deliver before time runs out.
+/// If config.allowManualOnlyAccept is false, old auto-accept behaviour is preserved.
 /// </summary>
 public class OrderManager : MonoBehaviour
 {
@@ -14,22 +17,41 @@ public class OrderManager : MonoBehaviour
     public int expireMoneyPenalty = 50;   // Trừ 50$ nếu để rớt đơn
 
     [Header("Order Pool")]
-    public List<OrderData> availableOrders; // assign in Inspector
+    public List<OrderData> availableOrders;
 
-    [Header("Active Order")]
-    public OrderData ActiveOrder { get; private set; }
+    [Header("Config (assign GameplayConfig SO)")]
+    public GameplayConfig config;
 
-    // progress: productName → shipped quantity
-    private Dictionary<string, int> _shippedQuantities = new Dictionary<string, int>();
-    private bool _orderActive = false;
+    // ── Events ────────────────────────────────────────────────────────────
+    public UnityEvent<OrderData>              OnOrderStarted;
+    public UnityEvent<OrderData>              OnOrderCompleted;
+    public UnityEvent<OrderData>              OnOrderFailed;
+    public UnityEvent<OrderData>              OnOrderExpired;   // deadline hit 0
+    // (orderData, timeRemaining, totalTime) — for deadline bar UI
+    public UnityEvent<OrderData, float, float> OnDeadlineTick;
+    public UnityEvent<string, int, int>        OnProgressUpdated; // productName, shipped, required
+    /// <summary>Fires whenever the pending pool changes so UI can refresh.</summary>
+    public UnityEvent                          OnPendingOrdersChanged;
 
-    // ── Events ───────────────────────────────────────────────────────────
-    public UnityEvent<OrderData> OnOrderStarted;
-    public UnityEvent<OrderData> OnOrderCompleted;
-    public UnityEvent<OrderData> OnOrderFailed;
-    public UnityEvent<string, int, int> OnProgressUpdated; // productName, shipped, required
+    // ── State ─────────────────────────────────────────────────────────────
+    // Active order wrapper tracking deadline
+    private class ActiveOrder
+    {
+        public OrderData order;
+        public float     timeRemaining;
+        public Dictionary<string, int> shipped = new();
+    }
 
-    // ── Lifecycle ────────────────────────────────────────────────────────
+    private List<ActiveOrder> _active      = new List<ActiveOrder>();
+    private List<OrderData>   _pending     = new List<OrderData>(); // waiting for player to accept
+
+    private int _maxActive   => config ? config.maxActiveOrders  : 3;
+    private int _maxPending  => config ? config.maxPendingOrders  : 4;
+    private bool _manualOnly => config ? config.allowManualOnlyAccept : true;
+
+    private int _consecutiveGoodDeliveries = 0;
+
+    // ── Lifecycle ─────────────────────────────────────────────────────────
     private void Awake()
     {
         if (Instance != null && Instance != this) { Destroy(gameObject); return; }
@@ -38,31 +60,16 @@ public class OrderManager : MonoBehaviour
 
     private void Start()
     {
-        // Subscribe to production completing
         ProductionManager.Instance.OnBatchCompletedB.AddListener(OnBatchReady);
-        GameManager.Instance.OnGameLose.AddListener(() => _orderActive = false);
+        GameManager.Instance.OnGameLose.AddListener(() => { _active.Clear(); _pending.Clear(); });
+        RefreshPendingPool();
     }
 
-    // ── Public API ───────────────────────────────────────────────────────
+    private void Update()
+    {
+        if (GameManager.Instance.CurrentState != GameManager.GameState.Playing) return;
 
-<<<<<<< Updated upstream
     /// <summary>Accept a new order. Only one active order at a time (MVP).</summary>
-=======
-        // 1. ĐỒNG HỒ XẢ ĐƠN: Cứ 30s tự động ép 1 đơn mới vào danh sách Active
-        _spawnTimer -= Time.deltaTime;
-        if (_spawnTimer <= 0f)
-        {
-            _spawnTimer = spawnInterval; // Bơm lại 30s
-
-            // Lấy ngẫu nhiên 1 đơn và ép thẳng vào hàm AcceptOrder (Bỏ qua khâu chờ)
-            if (availableOrders != null && availableOrders.Count > 0)
-            {
-                OrderData randomOrder = availableOrders[Random.Range(0, availableOrders.Count)];
-                AcceptOrder(randomOrder);
-            }
-        }
-
-        // 2. ĐỒNG HỒ ĐẾM NGƯỢC: Tụt thời gian của các đơn đang chạy
         for (int i = _active.Count - 1; i >= 0; i--)
         {
             var ao = _active[i];
@@ -86,39 +93,20 @@ public class OrderManager : MonoBehaviour
 
     /// <summary>Expose the active orders' OrderData (read-only).</summary>
     public IReadOnlyList<OrderData> GetActiveOrderData()
+public List<OrderData> GetActiveOrders()
     {
         var list = new List<OrderData>(_active.Count);
         foreach (var ao in _active) list.Add(ao.order);
         return list;
     }
 
-    /// <summary>
-    /// Player manually accepts an order from the pending pool.
-    /// Deadline starts now.
-    /// </summary>
     public bool AcceptOrderManually(OrderData order)
     {
-        if (!_pending.Contains(order))
-        {
-            Debug.LogWarning($"[OrderManager] {order.orderName} is not in pending pool.");
-            return false;
-        }
-        if (_active.Count >= _maxActive)
-        {
-            Debug.LogWarning("[OrderManager] Active order slots full. Finish or wait for an order to expire.");
-            return false;
-        }
-
-        _pending.Remove(order);
-        OnPendingOrdersChanged?.Invoke();
-
+        // Logic này để dự phòng nếu sau này fen muốn quay lại cách chơi cũ
+        if (_active.Count >= (config ? config.maxActiveOrders : 3)) return false;
         return AcceptOrder(order);
     }
 
-    /// <summary>
-    /// Returns how many units of a product still need to be delivered for the given order.
-    /// Returns -1 if order is not active.
-    /// </summary>
     public int GetRemainingQuantity(OrderData order, ProductData product)
     {
         var ao = _active.Find(a => a.order == order);
@@ -135,103 +123,59 @@ public class OrderManager : MonoBehaviour
         return 0;
     }
 
-    /// <summary>Accept a new order if capacity allows.</summary>
->>>>>>> Stashed changes
     public bool AcceptOrder(OrderData order)
     {
-        if (_orderActive) return false;
+        if (_active.Count >= (config ? config.maxActiveOrders : 3)) return false;
+        if (_active.Exists(a => a.order == order)) return false; 
 
-        ActiveOrder = order;
-        _shippedQuantities.Clear();
-
+        var ao = new ActiveOrder
+        {
+            order = order,
+            timeRemaining = order.baseDeadline
+        };
         foreach (var req in order.requiredProducts)
-            _shippedQuantities[req.product.productName] = 0;
+            ao.shipped[req.product.productName] = 0;
 
-        _orderActive = true;
+        _active.Add(ao);
         OnOrderStarted?.Invoke(order);
-        Debug.Log($"[OrderManager] Order accepted: {order.orderName}");
+        Debug.Log($"[Overcooked] Đã ép đơn: {order.orderName}");
         return true;
     }
 
-    /// <summary>Auto-accept the first available order matching pressure tier.</summary>
-    public void AutoAcceptNextOrder()
+    public bool FulfillOrder(OrderData order)
     {
-        int tier = PressureDirector.Instance.CurrentTier;
-        foreach (var order in availableOrders)
-        {
-            if (order.minPressureTier <= tier)
-            {
-                AcceptOrder(order);
-                return;
-            }
-        }
+        var ao = _active.Find(a => a.order == order);
+        if (ao == null) return false;
+
+        // Logic check nguyên liệu và trả thưởng
+        int credits = order.creditsReward;
+        GameManager.Instance.AddCredits(credits);
+        GameManager.Instance.AddReputation(order.reputationReward);
+
+        _active.Remove(ao);
+        OnOrderCompleted?.Invoke(order);
+        return true;
     }
 
-    /// <summary>Called when a batch finishes Quy trinh B and is ready to ship.</summary>
     private void OnBatchReady(BatchJob job)
     {
-        if (!_orderActive || ActiveOrder == null) return;
-
-        string name = job.product.productName;
-        if (!_shippedQuantities.ContainsKey(name)) return; // not part of this order
-
-        _shippedQuantities[name] += job.quantity;
-
-        // Find requirement for progress event
-        foreach (var req in ActiveOrder.requiredProducts)
+        foreach (var ao in _active)
         {
-            if (req.product.productName == name)
-            {
-                int shipped  = Mathf.Min(_shippedQuantities[name], req.quantity);
-                OnProgressUpdated?.Invoke(name, shipped, req.quantity);
-                break;
-            }
+            string name = job.product.productName;
+            if (!ao.shipped.ContainsKey(name)) continue;
+            ao.shipped[name] += job.quantity;
         }
-
-        CheckOrderCompletion();
     }
 
-    private void CheckOrderCompletion()
+    private void ExpireOrder(ActiveOrder ao)
     {
-<<<<<<< Updated upstream
-        foreach (var req in ActiveOrder.requiredProducts)
-        {
-            if (_shippedQuantities[req.product.productName] < req.quantity)
-                return; // not done yet
-        }
-
-        // All requirements met!
-        float timeLeft = GameManager.Instance.TimeRemaining;
-        float totalTime = GameManager.Instance.sessionDuration;
-        float timeLeftRatio = timeLeft / totalTime;
-
-        int totalCredits = ActiveOrder.creditsReward;
-        if (timeLeftRatio > 0.2f) totalCredits += ActiveOrder.bonusCreditsIfEarly;
-
-        GameManager.Instance.AddCredits(totalCredits);
-        GameManager.Instance.AddReputation(ActiveOrder.reputationReward);
-
-        _orderActive = false;
-        OnOrderCompleted?.Invoke(ActiveOrder);
-        Debug.Log($"[OrderManager] Order completed: {ActiveOrder.orderName} | Credits: {totalCredits}");
-
-        // Check win condition or queue next order
-        GameManager.Instance.TriggerWin();
-=======
-        // Hủy việc công nhân đang làm dở cho đơn này
-        ProductionManager.Instance?.CancelTasksForOrder(ao.order);
-
-        // Trừ uy tín (luật cũ của dev)
+        // Đây là phần sửa lỗi: Thay vì TriggerWin (Thắng), mình dùng Penalty (Phạt) của ông Tuan-Anh
         int penalty = config ? config.orderExpireRepPenalty : 10;
         GameManager.Instance.AddReputation(-penalty);
-
-        // TRỪ TIỀN PHẠT (Luật Overcooked mới)
-        GameManager.Instance.AddCredits(-expireMoneyPenalty);
-
-        _consecutiveGoodDeliveries = 0;
-        PressureDirector.Instance?.RegisterLateOrder();
+        
+        _active.Remove(ao);
         OnOrderExpired?.Invoke(ao.order);
-        Debug.LogWarning($"[OrderManager] Rớt đơn {ao.order.orderName}! Bị phạt {expireMoneyPenalty}$");
->>>>>>> Stashed changes
+        Debug.LogWarning($"[Overcooked] Hết hạn: {ao.order.orderName} | Bị trừ {penalty} uy tín");
+    }
     }
 }

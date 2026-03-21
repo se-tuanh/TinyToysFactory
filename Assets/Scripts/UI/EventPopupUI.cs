@@ -80,7 +80,7 @@ public class EventPopupUI : MonoBehaviour
     {
         popupPanel.SetActive(false);
         Time.timeScale = 1f; // resume game
-        PressureDirector.Instance.ResolveEvent(choice);
+        PressureDirector.Instance.ResolveEvent(_currentEvent, choice);
         OnChoiceMade?.Invoke(choice);
     }
 }

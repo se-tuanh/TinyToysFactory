@@ -1,0 +1,26 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4535e05503e65a949a22ac10d3f37024, type: 3}
+  m_Name: Product_Doll
+  m_EditorClassIdentifier: 
+  productName: Luxury Doll
+  productIcon: {fileID: 0}
+  tier: 2
+  woodPlasticCost: 20
+  assemblyTime: 18
+  paintFabricCost: 18
+  paintPackTime: 14
+  powerPerAssembly: 50
+  powerPerPaint: 40
+  workersRequired: 0
+  baseCredits: 140
+  reputationValue: 12

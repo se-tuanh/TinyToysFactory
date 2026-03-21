@@ -11,15 +11,15 @@ public class ResourceManager : MonoBehaviour
 
     // ── Config ───────────────────────────────────────────────────────────
     [Header("Materials")]
-    public int maxWoodPlastic = 100;
-    public int maxPaintFabric = 100;
+    public int maxWoodPlastic = 200;
+    public int maxPaintFabric = 200;
     public int restockAmount = 30;
     public float autoRestockInterval = 60f; // seconds
     public int emergencyBuyCost = 50;
     public int emergencyBuyAmount = 25;
 
     [Header("Power")]
-    public int maxPower = 100;
+    public int maxPower = 300;
 
     [Header("Workers")]
     public int maxWorkers = 3;
@@ -28,8 +28,8 @@ public class ResourceManager : MonoBehaviour
     public int maxInventoryCapacity = 50;
 
     // ── State (read-only externally) ─────────────────────────────────────
-    public int WoodPlastic { get; private set; }
-    public int PaintFabric { get; private set; }
+    public int WoodPlastic { get; set; }
+    public int PaintFabric { get; set; }
     public int Power { get; private set; }
     public int AvailableWorkers { get; private set; }
 
@@ -51,15 +51,48 @@ public class ResourceManager : MonoBehaviour
     {
         if (Instance != null && Instance != this) { Destroy(gameObject); return; }
         Instance = this;
+
+        // Try reading starting amounts from GameplayConfig early (may be null if GameManager not awake, but we try)
+        var cfg = FindFirstObjectByType<GameManager>()?.config;
+        if (cfg != null)
+        {
+            maxWoodPlastic      = cfg.maxWoodPlastic;
+            maxPaintFabric      = cfg.maxPaintFabric;
+            maxPower            = cfg.maxPower;
+            maxWorkers          = cfg.maxWorkers;
+            maxInventoryCapacity= cfg.maxInventory;
+            autoRestockInterval = cfg.autoRestockInterval;
+            restockAmount       = cfg.restockAmount;
+            emergencyBuyCost    = cfg.emergencyBuyCost;
+            emergencyBuyAmount  = cfg.emergencyBuyAmount;
+            WoodPlastic         = cfg.startingWoodPlastic;
+            PaintFabric         = cfg.startingPaintFabric;
+        }
+        else
+        {
+            WoodPlastic = 150;
+            PaintFabric = 150;
+        }
     }
 
     private void Start()
     {
-        // Start with half stock
-        WoodPlastic = maxWoodPlastic / 2;
-        PaintFabric = maxPaintFabric / 2;
+        // Re-check config in Start in case GameManager awoke after us
+        var cfg = GameManager.Instance?.config;
+        if (cfg != null)
+        {
+            WoodPlastic = cfg.startingWoodPlastic;
+            PaintFabric = cfg.startingPaintFabric;
+        }
+
         Power = maxPower;
         AvailableWorkers = maxWorkers;
+
+        // Initial event pushes
+        OnWoodPlasticChanged?.Invoke(WoodPlastic);
+        OnPaintFabricChanged?.Invoke(PaintFabric);
+        OnPowerChanged?.Invoke(Power);
+        OnWorkersChanged?.Invoke(AvailableWorkers);
     }
 
     private void Update()
@@ -95,13 +128,13 @@ public class ResourceManager : MonoBehaviour
 
     public void AddWoodPlastic(int amount)
     {
-        WoodPlastic = Mathf.Min(WoodPlastic + amount, maxWoodPlastic);
+        WoodPlastic += amount; // Allow overflow when bought/restocked
         OnWoodPlasticChanged?.Invoke(WoodPlastic);
     }
 
     public void AddPaintFabric(int amount)
     {
-        PaintFabric = Mathf.Min(PaintFabric + amount, maxPaintFabric);
+        PaintFabric += amount; // Allow overflow when bought/restocked
         OnPaintFabricChanged?.Invoke(PaintFabric);
     }
 
@@ -186,6 +219,11 @@ public class ResourceManager : MonoBehaviour
     public bool HasProduct(ProductData product, int amount)
     {
         return _inventory.ContainsKey(product) && _inventory[product] >= amount;
+    }
+
+    public int GetProductCount(ProductData product)
+    {
+        return _inventory.ContainsKey(product) ? _inventory[product] : 0;
     }
 
     public bool RemoveProduct(ProductData product, int amount)

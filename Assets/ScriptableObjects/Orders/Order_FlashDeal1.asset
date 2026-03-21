@@ -1,0 +1,27 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 010aeae95fe28d045a71f5b5adc4d03b, type: 3}
+  m_Name: Order_FlashDeal1
+  m_EditorClassIdentifier: 
+  orderName: Flash Bundle
+  faction: 2
+  clientIcon: {fileID: 0}
+  requiredProducts:
+  - product: {fileID: 11400000, guid: 9dc82a476ab97644eb24997c29191778, type: 2}
+    quantity: 1
+  - product: {fileID: 11400000, guid: b3e553f89dc40574eadef950eb0d88a8, type: 2}
+    quantity: 2
+  baseDeadline: 90
+  creditsReward: 250
+  reputationReward: 8
+  bonusCreditsIfEarly: 60
+  minPressureTier: 1
