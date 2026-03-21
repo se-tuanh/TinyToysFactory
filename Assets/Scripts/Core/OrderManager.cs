@@ -129,8 +129,29 @@ public class OrderManager : MonoBehaviour
 
     private void OnBatchReady(BatchJob job)
     {
-        foreach (var ao in _active)
+        //foreach (var ao in _active)
+        //{
+        //    if (ao.shipped.ContainsKey(job.product.productName))
+        //    {
+        //        ao.shipped[job.product.productName] += job.quantity;
+
+        //        // Cập nhật tiến độ UI
+        //        foreach (var req in ao.order.requiredProducts)
+        //        {
+        //            if (req.product.productName == job.product.productName)
+        //            {
+        //                int current = Mathf.Min(ao.shipped[job.product.productName], req.quantity);
+        //                OnProgressUpdated?.Invoke(job.product.productName, current, req.quantity);
+        //            }
+        //        }
+        //        CheckCompletion(ao);
+        //    }
+        //}
+        // Dùng vòng lặp for đếm ngược để tránh lỗi "Collection was modified"
+        for (int i = _active.Count - 1; i >= 0; i--)
         {
+            var ao = _active[i];
+
             if (ao.shipped.ContainsKey(job.product.productName))
             {
                 ao.shipped[job.product.productName] += job.quantity;
@@ -144,6 +165,9 @@ public class OrderManager : MonoBehaviour
                         OnProgressUpdated?.Invoke(job.product.productName, current, req.quantity);
                     }
                 }
+
+                // Kiểm tra hoàn thành (hàm này có thể sẽ xóa 'ao' khỏi _active, 
+                // nhưng vì mình đang đếm ngược nên rất an toàn)
                 CheckCompletion(ao);
             }
         }

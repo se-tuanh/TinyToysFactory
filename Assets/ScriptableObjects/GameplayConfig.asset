@@ -21,7 +21,7 @@ MonoBehaviour:
   maxWoodPlastic: 200
   maxPaintFabric: 200
   maxPower: 300
-  maxWorkers: 3
+  maxWorkers: 6
   maxInventory: 50
   autoRestockInterval: 45
   restockAmount: 40
