@@ -1,12 +1,12 @@
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
+using System.Collections.Generic;
 
 /// <summary>
 /// UpgradeShopUI — In-game upgrade panel toggled with Tab key or shopButton.
 /// Three upgrades: extra worker, bigger WIP buffer, emergency power restore.
 /// Buttons auto-disable when the player can't afford them.
-/// Wire all fields in Inspector or let TinyToysSceneBuilder do it.
 /// </summary>
 public class UpgradeShopUI : MonoBehaviour
 {
@@ -30,17 +30,18 @@ public class UpgradeShopUI : MonoBehaviour
     public int             powerRestoreCost   = 40;
     public int             powerRestoreAmount = 50;
 
-    [Header("Upgrade: Expand Factory")]
-    public Button          buyAssemblyBtn;
-    public TextMeshProUGUI buyAssemblyLabel;
-    public int             baseAssemblyCost = 250;
+    [Header("Upgrade: Expand Factory (Arrays)")]
+    public Button[] assemblyButtons;
+    public TextMeshProUGUI[] assemblyLabels;
+    
+    public Button[] paintButtons;
+    public TextMeshProUGUI[] paintLabels;
 
-    public Button          buyPaintBtn;
-    public TextMeshProUGUI buyPaintLabel;
-    public int             basePaintCost = 350;
+    public int baseAssemblyCost = 250;
+    public int basePaintCost = 350;
 
-    private Machine templateAssemblyMachine;
-    private Machine templatePaintMachine;
+    private Machine[] _assemblyTemplates;
+    private Machine[] _paintTemplates;
 
     // ── Lifecycle ────────────────────────────────────────────────────────────
     private void Start()
@@ -48,28 +49,56 @@ public class UpgradeShopUI : MonoBehaviour
         if (shopPanel) shopPanel.SetActive(false);
         if (shopButton) shopButton.onClick.AddListener(ToggleShop);
 
-        // Find Templates
-        var ta = GameObject.Find("MachineA_Assembly");
-        if (ta) templateAssemblyMachine = ta.GetComponent<Machine>();
-        var tp = GameObject.Find("MachineB_Paint");
-        if (tp) templatePaintMachine = tp.GetComponent<Machine>();
+        // Find Templates (find all unique machines in scene)
+#if UNITY_2022_2_OR_NEWER
+        var allMachines = GameObject.FindObjectsByType<Machine>(FindObjectsSortMode.None);
+#else
+        var allMachines = GameObject.FindObjectsOfType<Machine>();
+#endif
+        var assemblyList = new List<Machine>();
+        var paintList = new List<Machine>();
+        var addedProdsA = new HashSet<ProductData>();
+        var addedProdsP = new HashSet<ProductData>();
 
-        // Wire buttons
+        foreach(var m in allMachines)
+        {
+            if (m.machineType == Machine.MachineType.AssemblyA && !addedProdsA.Contains(m.assignedProduct))
+            {
+                assemblyList.Add(m);
+                addedProdsA.Add(m.assignedProduct);
+            }
+            else if (m.machineType == Machine.MachineType.PaintPackB && !addedProdsP.Contains(m.assignedProduct))
+            {
+                paintList.Add(m);
+                addedProdsP.Add(m.assignedProduct);
+            }
+        }
+        _assemblyTemplates = assemblyList.ToArray();
+        _paintTemplates = paintList.ToArray();
+
+        // Wire Upgradable Buttons
         if (workerUpgradeBtn) workerUpgradeBtn.onClick.AddListener(BuyWorker);
         if (bufferUpgradeBtn) bufferUpgradeBtn.onClick.AddListener(BuyBuffer);
         if (powerRestoreBtn)  powerRestoreBtn .onClick.AddListener(BuyPower);
-        if (buyAssemblyBtn)   buyAssemblyBtn  .onClick.AddListener(BuyAssembly);
-        if (buyPaintBtn)      buyPaintBtn     .onClick.AddListener(BuyPaint);
-
-        // Update labels
-        SetLabel(workerUpgradeLabel, $"+1 Worker\n${workerUpgradeCost}");
-        SetLabel(bufferUpgradeLabel, $"+2 Buffer\n${bufferUpgradeCost}");
-        SetLabel(powerRestoreLabel,  $"⚡ Power +{powerRestoreAmount}\n${powerRestoreCost}");
-        SetLabel(buyAssemblyLabel,   $"+1 Assembly\n${GetMachineCost(Machine.MachineType.AssemblyA)}");
-        SetLabel(buyPaintLabel,      $"+1 Paint\n${GetMachineCost(Machine.MachineType.PaintPackB)}");
+        
+        // Loop through provided Machine buttons and wire them
+        for (int i = 0; i < assemblyButtons.Length; i++)
+        {
+            if (i >= _assemblyTemplates.Length || assemblyButtons[i] == null) continue;
+            Machine captured = _assemblyTemplates[i];
+            assemblyButtons[i].onClick.AddListener(() => BuyMachine(captured));
+        }
+        for (int i = 0; i < paintButtons.Length; i++)
+        {
+            if (i >= _paintTemplates.Length || paintButtons[i] == null) continue;
+            Machine captured = _paintTemplates[i];
+            paintButtons[i].onClick.AddListener(() => BuyMachine(captured));
+        }
 
         // Refresh affordability whenever credits change
-        GameManager.Instance.OnCreditsChanged.AddListener(_ => RefreshButtons());
+        if (GameManager.Instance != null)
+            GameManager.Instance.OnCreditsChanged.AddListener(_ => RefreshButtons());
+            
         RefreshButtons();
     }
 
@@ -85,7 +114,8 @@ public class UpgradeShopUI : MonoBehaviour
         if (!shopPanel) return;
         bool next = !shopPanel.activeSelf;
         shopPanel.SetActive(next);
-        // Pause while browsing upgrades
+        
+        if (GameManager.Instance == null) return;
         if (next) GameManager.Instance.PauseGame();
         else      GameManager.Instance.ResumeGame();
     }
@@ -95,7 +125,6 @@ public class UpgradeShopUI : MonoBehaviour
     {
         if (!GameManager.Instance.SpendCredits(workerUpgradeCost)) return;
         ResourceManager.Instance.UpgradeWorkerSlot();
-        Debug.Log("[UpgradeShop] Bought extra worker slot.");
         RefreshButtons();
     }
 
@@ -103,7 +132,6 @@ public class UpgradeShopUI : MonoBehaviour
     {
         if (!GameManager.Instance.SpendCredits(bufferUpgradeCost)) return;
         ProductionManager.Instance.maxBufferSize += 2;
-        Debug.Log($"[UpgradeShop] Buffer expanded → {ProductionManager.Instance.maxBufferSize}");
         RefreshButtons();
     }
 
@@ -111,7 +139,6 @@ public class UpgradeShopUI : MonoBehaviour
     {
         if (!GameManager.Instance.SpendCredits(powerRestoreCost)) return;
         ResourceManager.Instance.RestorePower(powerRestoreAmount);
-        Debug.Log($"[UpgradeShop] Emergency power restored (+{powerRestoreAmount}).");
         RefreshButtons();
     }
 
@@ -123,23 +150,11 @@ public class UpgradeShopUI : MonoBehaviour
         return (type == Machine.MachineType.AssemblyA ? baseAssemblyCost : basePaintCost) + (count * 50);
     }
 
-    private void BuyAssembly()
+    private void BuyMachine(Machine template)
     {
-        int cost = GetMachineCost(Machine.MachineType.AssemblyA);
+        int cost = GetMachineCost(template.machineType);
         if (!GameManager.Instance.SpendCredits(cost)) return;
-        if (templateAssemblyMachine == null) return;
-
-        SpawnMachine(templateAssemblyMachine, Machine.MachineType.AssemblyA);
-        RefreshButtons();
-    }
-
-    private void BuyPaint()
-    {
-        int cost = GetMachineCost(Machine.MachineType.PaintPackB);
-        if (!GameManager.Instance.SpendCredits(cost)) return;
-        if (templatePaintMachine == null) return;
-
-        SpawnMachine(templatePaintMachine, Machine.MachineType.PaintPackB);
+        SpawnMachine(template, template.machineType);
         RefreshButtons();
     }
 
@@ -153,27 +168,60 @@ public class UpgradeShopUI : MonoBehaviour
         newObj.name = $"{template.gameObject.name}_{count + 1}";
         
         var newMachine = newObj.GetComponent<Machine>();
-        if (newMachine.HasWorker) newMachine.ToggleWorker(); // Release copied worker flag without interacting with ResourceManager
-        // The new machine's Start() will register it to ProductionManager automatically
+        if (newMachine != null && newMachine.HasWorker) newMachine.ToggleWorker();
         
-        SetLabel(type == Machine.MachineType.AssemblyA ? buyAssemblyLabel : buyPaintLabel, 
-                $"+1 {(type == Machine.MachineType.AssemblyA ? "Assembly" : "Paint")}\n${GetMachineCost(type)}");
         Debug.Log($"[UpgradeShop] Purchased new {type} machine!");
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
-    private void RefreshButtons()
+    public void RefreshButtons()
     {
+        if (GameManager.Instance == null) return;
         int credits = GameManager.Instance.Credits;
+        
         SetInteractable(workerUpgradeBtn, credits >= workerUpgradeCost);
         SetInteractable(bufferUpgradeBtn, credits >= bufferUpgradeCost);
         SetInteractable(powerRestoreBtn,  credits >= powerRestoreCost);
         
-        SetInteractable(buyAssemblyBtn,   credits >= GetMachineCost(Machine.MachineType.AssemblyA));
-        SetInteractable(buyPaintBtn,      credits >= GetMachineCost(Machine.MachineType.PaintPackB));
-        
-        SetLabel(buyAssemblyLabel, $"+1 Assembly\n${GetMachineCost(Machine.MachineType.AssemblyA)}");
-        SetLabel(buyPaintLabel,    $"+1 Paint\n${GetMachineCost(Machine.MachineType.PaintPackB)}");
+        SetLabel(workerUpgradeLabel, $"+1 Worker\n${workerUpgradeCost}");
+        SetLabel(bufferUpgradeLabel, $"+2 Buffer\n${bufferUpgradeCost}");
+        SetLabel(powerRestoreLabel,  $"⚡ Power +{powerRestoreAmount}\n${powerRestoreCost}");
+
+        // Refresh Dynamic Assembly Buttons
+        for (int i = 0; i < assemblyButtons.Length; i++)
+        {
+            if (assemblyButtons[i] == null) continue;
+            
+            if (i >= _assemblyTemplates.Length) {
+                assemblyButtons[i].gameObject.SetActive(false);
+                continue;
+            }
+            
+            var template = _assemblyTemplates[i];
+            int cost = GetMachineCost(Machine.MachineType.AssemblyA);
+            SetInteractable(assemblyButtons[i], credits >= cost);
+            
+            string prodName = template.assignedProduct != null ? template.assignedProduct.productName : "Machine";
+            if (i < assemblyLabels.Length) SetLabel(assemblyLabels[i], $"+1 Ráp {prodName}\n${cost}");
+        }
+
+        // Refresh Dynamic Paint Buttons
+        for (int i = 0; i < paintButtons.Length; i++)
+        {
+            if (paintButtons[i] == null) continue;
+            
+            if (i >= _paintTemplates.Length) {
+                paintButtons[i].gameObject.SetActive(false);
+                continue;
+            }
+            
+            var template = _paintTemplates[i];
+            int cost = GetMachineCost(Machine.MachineType.PaintPackB);
+            SetInteractable(paintButtons[i], credits >= cost);
+            
+            string prodName = template.assignedProduct != null ? template.assignedProduct.productName : "Machine";
+            if (i < paintLabels.Length) SetLabel(paintLabels[i], $"+1 Sơn {prodName}\n${cost}");
+        }
     }
 
     private static void SetInteractable(Button btn, bool on)
