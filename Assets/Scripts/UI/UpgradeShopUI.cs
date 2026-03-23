@@ -7,7 +7,6 @@ using System.Collections.Generic;
 /// UpgradeShopUI — In-game upgrade panel toggled with Tab key or shopButton.
 /// Three upgrades: extra worker, bigger WIP buffer, emergency power restore.
 /// Buttons auto-disable when the player can't afford them.
-/// Wire all fields in Inspector or let TinyToysSceneBuilder do it.
 /// </summary>
 public class UpgradeShopUI : MonoBehaviour
 {
@@ -31,7 +30,7 @@ public class UpgradeShopUI : MonoBehaviour
     public int             powerRestoreCost   = 40;
     public int             powerRestoreAmount = 50;
 
-    [Header("Upgrade: Expand Factory")]
+    [Header("Upgrade: Expand Factory (Arrays)")]
     public Button[] assemblyButtons;
     public TextMeshProUGUI[] assemblyLabels;
     
@@ -51,7 +50,11 @@ public class UpgradeShopUI : MonoBehaviour
         if (shopButton) shopButton.onClick.AddListener(ToggleShop);
 
         // Find Templates (find all unique machines in scene)
+#if UNITY_2022_2_OR_NEWER
         var allMachines = GameObject.FindObjectsByType<Machine>(FindObjectsSortMode.None);
+#else
+        var allMachines = GameObject.FindObjectsOfType<Machine>();
+#endif
         var assemblyList = new List<Machine>();
         var paintList = new List<Machine>();
         var addedProdsA = new HashSet<ProductData>();
@@ -73,27 +76,29 @@ public class UpgradeShopUI : MonoBehaviour
         _assemblyTemplates = assemblyList.ToArray();
         _paintTemplates = paintList.ToArray();
 
-        // Wire buttons
+        // Wire Upgradable Buttons
         if (workerUpgradeBtn) workerUpgradeBtn.onClick.AddListener(BuyWorker);
         if (bufferUpgradeBtn) bufferUpgradeBtn.onClick.AddListener(BuyBuffer);
         if (powerRestoreBtn)  powerRestoreBtn .onClick.AddListener(BuyPower);
         
-        // Loop through provided buttons and wire them to templates
+        // Loop through provided Machine buttons and wire them
         for (int i = 0; i < assemblyButtons.Length; i++)
         {
-            if (i >= _assemblyTemplates.Length || assemblyButtons[i] == null) break;
-            var template = _assemblyTemplates[i];
-            assemblyButtons[i].onClick.AddListener(() => BuyMachine(template));
+            if (i >= _assemblyTemplates.Length || assemblyButtons[i] == null) continue;
+            Machine captured = _assemblyTemplates[i];
+            assemblyButtons[i].onClick.AddListener(() => BuyMachine(captured));
         }
         for (int i = 0; i < paintButtons.Length; i++)
         {
-            if (i >= _paintTemplates.Length || paintButtons[i] == null) break;
-            var template = _paintTemplates[i];
-            paintButtons[i].onClick.AddListener(() => BuyMachine(template));
+            if (i >= _paintTemplates.Length || paintButtons[i] == null) continue;
+            Machine captured = _paintTemplates[i];
+            paintButtons[i].onClick.AddListener(() => BuyMachine(captured));
         }
 
         // Refresh affordability whenever credits change
-        GameManager.Instance.OnCreditsChanged.AddListener(_ => RefreshButtons());
+        if (GameManager.Instance != null)
+            GameManager.Instance.OnCreditsChanged.AddListener(_ => RefreshButtons());
+            
         RefreshButtons();
     }
 
@@ -109,7 +114,8 @@ public class UpgradeShopUI : MonoBehaviour
         if (!shopPanel) return;
         bool next = !shopPanel.activeSelf;
         shopPanel.SetActive(next);
-        // Pause while browsing upgrades
+        
+        if (GameManager.Instance == null) return;
         if (next) GameManager.Instance.PauseGame();
         else      GameManager.Instance.ResumeGame();
     }
@@ -119,7 +125,6 @@ public class UpgradeShopUI : MonoBehaviour
     {
         if (!GameManager.Instance.SpendCredits(workerUpgradeCost)) return;
         ResourceManager.Instance.UpgradeWorkerSlot();
-        Debug.Log("[UpgradeShop] Bought extra worker slot.");
         RefreshButtons();
     }
 
@@ -127,7 +132,6 @@ public class UpgradeShopUI : MonoBehaviour
     {
         if (!GameManager.Instance.SpendCredits(bufferUpgradeCost)) return;
         ProductionManager.Instance.maxBufferSize += 2;
-        Debug.Log($"[UpgradeShop] Buffer expanded → {ProductionManager.Instance.maxBufferSize}");
         RefreshButtons();
     }
 
@@ -135,7 +139,6 @@ public class UpgradeShopUI : MonoBehaviour
     {
         if (!GameManager.Instance.SpendCredits(powerRestoreCost)) return;
         ResourceManager.Instance.RestorePower(powerRestoreAmount);
-        Debug.Log($"[UpgradeShop] Emergency power restored (+{powerRestoreAmount}).");
         RefreshButtons();
     }
 
@@ -165,16 +168,17 @@ public class UpgradeShopUI : MonoBehaviour
         newObj.name = $"{template.gameObject.name}_{count + 1}";
         
         var newMachine = newObj.GetComponent<Machine>();
-        if (newMachine.HasWorker) newMachine.ToggleWorker(); // Release copied worker flag without interacting with ResourceManager
-        // The new machine's Start() will register it to ProductionManager automatically
+        if (newMachine != null && newMachine.HasWorker) newMachine.ToggleWorker();
         
         Debug.Log($"[UpgradeShop] Purchased new {type} machine!");
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
-    private void RefreshButtons()
+    public void RefreshButtons()
     {
+        if (GameManager.Instance == null) return;
         int credits = GameManager.Instance.Credits;
+        
         SetInteractable(workerUpgradeBtn, credits >= workerUpgradeCost);
         SetInteractable(bufferUpgradeBtn, credits >= bufferUpgradeCost);
         SetInteractable(powerRestoreBtn,  credits >= powerRestoreCost);
@@ -183,31 +187,40 @@ public class UpgradeShopUI : MonoBehaviour
         SetLabel(bufferUpgradeLabel, $"+2 Buffer\n${bufferUpgradeCost}");
         SetLabel(powerRestoreLabel,  $"⚡ Power +{powerRestoreAmount}\n${powerRestoreCost}");
 
-        // Refresh all dynamic machine buttons
+        // Refresh Dynamic Assembly Buttons
         for (int i = 0; i < assemblyButtons.Length; i++)
         {
-            if (i >= _assemblyTemplates.Length || assemblyButtons[i] == null) {
-                if(assemblyButtons[i] != null) assemblyButtons[i].gameObject.SetActive(false);
+            if (assemblyButtons[i] == null) continue;
+            
+            if (i >= _assemblyTemplates.Length) {
+                assemblyButtons[i].gameObject.SetActive(false);
                 continue;
             }
+            
             var template = _assemblyTemplates[i];
             int cost = GetMachineCost(Machine.MachineType.AssemblyA);
             SetInteractable(assemblyButtons[i], credits >= cost);
-            string prodName = template.assignedProduct != null ? template.assignedProduct.productName : "Item";
-            SetLabel(assemblyLabels[i], $"+1 Ráp {prodName}\n${cost}");
+            
+            string prodName = template.assignedProduct != null ? template.assignedProduct.productName : "Machine";
+            if (i < assemblyLabels.Length) SetLabel(assemblyLabels[i], $"+1 Ráp {prodName}\n${cost}");
         }
 
+        // Refresh Dynamic Paint Buttons
         for (int i = 0; i < paintButtons.Length; i++)
         {
-            if (i >= _paintTemplates.Length || paintButtons[i] == null) {
-                if(paintButtons[i] != null) paintButtons[i].gameObject.SetActive(false);
+            if (paintButtons[i] == null) continue;
+            
+            if (i >= _paintTemplates.Length) {
+                paintButtons[i].gameObject.SetActive(false);
                 continue;
             }
+            
             var template = _paintTemplates[i];
             int cost = GetMachineCost(Machine.MachineType.PaintPackB);
             SetInteractable(paintButtons[i], credits >= cost);
-            string prodName = template.assignedProduct != null ? template.assignedProduct.productName : "Item";
-            SetLabel(paintLabels[i], $"+1 Sơn {prodName}\n${cost}");
+            
+            string prodName = template.assignedProduct != null ? template.assignedProduct.productName : "Machine";
+            if (i < paintLabels.Length) SetLabel(paintLabels[i], $"+1 Sơn {prodName}\n${cost}");
         }
     }
 
