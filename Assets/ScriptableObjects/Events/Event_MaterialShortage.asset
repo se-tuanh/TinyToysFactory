@@ -29,6 +29,7 @@ MonoBehaviour:
     reputationChange: -5
     pressureTierChange: 0
     failChance: 0.3
+    failConsequencePenalty: 0
     failConsequenceDescription: 
   repair:
     choiceLabel: Stop & Repair
@@ -41,6 +42,7 @@ MonoBehaviour:
     reputationChange: 5
     pressureTierChange: 0
     failChance: 0
+    failConsequencePenalty: 0
     failConsequenceDescription: 
   trade:
     choiceLabel: Spend Credits
@@ -53,6 +55,7 @@ MonoBehaviour:
     reputationChange: 0
     pressureTierChange: 0
     failChance: 0
+    failConsequencePenalty: 0
     failConsequenceDescription: 
   telegraphDuration: 1.5
   telegraphSound: {fileID: 0}

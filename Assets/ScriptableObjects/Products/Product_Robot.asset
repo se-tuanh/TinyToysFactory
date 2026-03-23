@@ -15,12 +15,12 @@ MonoBehaviour:
   productName: Robot
   productIcon: {fileID: 0}
   tier: 1
-  woodPlasticCost: 15
-  assemblyTime: 12
-  paintFabricCost: 12
-  paintPackTime: 10
-  powerPerAssembly: 40
-  powerPerPaint: 30
+  woodPlasticCost: 5
+  assemblyTime: 3
+  paintFabricCost: 4
+  paintPackTime: 3
+  powerPerAssembly: 12
+  powerPerPaint: 10
   workersRequired: 0
   baseCredits: 90
   reputationValue: 8

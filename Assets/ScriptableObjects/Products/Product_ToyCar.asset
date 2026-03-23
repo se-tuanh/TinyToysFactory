@@ -15,12 +15,12 @@ MonoBehaviour:
   productName: Toy Car
   productIcon: {fileID: 0}
   tier: 0
-  woodPlasticCost: 10
-  assemblyTime: 8
-  paintFabricCost: 8
-  paintPackTime: 6
-  powerPerAssembly: 30
-  powerPerPaint: 20
+  woodPlasticCost: 3
+  assemblyTime: 2
+  paintFabricCost: 2
+  paintPackTime: 2
+  powerPerAssembly: 8
+  powerPerPaint: 6
   workersRequired: 0
   baseCredits: 50
   reputationValue: 5

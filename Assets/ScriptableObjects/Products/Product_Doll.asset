@@ -15,12 +15,12 @@ MonoBehaviour:
   productName: Luxury Doll
   productIcon: {fileID: 0}
   tier: 2
-  woodPlasticCost: 20
-  assemblyTime: 18
-  paintFabricCost: 18
-  paintPackTime: 14
-  powerPerAssembly: 50
-  powerPerPaint: 40
+  woodPlasticCost: 8
+  assemblyTime: 4
+  paintFabricCost: 6
+  paintPackTime: 4
+  powerPerAssembly: 15
+  powerPerPaint: 12
   workersRequired: 0
   baseCredits: 140
   reputationValue: 12
