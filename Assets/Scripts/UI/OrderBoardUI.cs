@@ -53,6 +53,7 @@ public class OrderBoardUI : MonoBehaviour
         om.OnOrderStarted           .AddListener(OnOrderStarted);
         om.OnOrderCompleted         .AddListener(order => RemoveActiveSlot(order));
         om.OnOrderFailed            .AddListener(order => RemoveActiveSlot(order));
+        om.OnOrderCancelled         .AddListener(order => RemoveActiveSlot(order));
         om.OnOrderExpired           .AddListener(order => { RemoveActiveSlot(order); ShowExpiredToast(order.orderName); });
         om.OnDeadlineTick           .AddListener(OnDeadlineTick);
         om.OnPendingOrdersChanged   .AddListener(RefreshPendingList);
@@ -165,6 +166,14 @@ public class OrderBoardUI : MonoBehaviour
         {
             var capturedOrder = order;
             deliverBtn.onClick.AddListener(() => OrderManager.Instance.FulfillOrder(capturedOrder));
+        }
+
+        // Cancel button
+        var cancelBtn = slot.transform.Find("CancelButton")?.GetComponent<Button>();
+        if (cancelBtn)
+        {
+            var capturedOrder = order;
+            cancelBtn.onClick.AddListener(() => OrderManager.Instance.CancelOrder(capturedOrder));
         }
     }
 

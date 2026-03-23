@@ -13,6 +13,7 @@ public class OrderManager : MonoBehaviour
     public float spawnInterval = 5f;
     private float _spawnTimer = 0f;
     public int expireMoneyPenalty = 50;
+    public int cancelMoneyPenalty = 20;
     public int _maxActive = 7;
 
     [Header("Pools")]
@@ -25,6 +26,7 @@ public class OrderManager : MonoBehaviour
     public UnityEvent<OrderData> OnOrderCompleted;
     public UnityEvent<OrderData> OnOrderFailed;
     public UnityEvent<OrderData> OnOrderExpired;
+    public UnityEvent<OrderData> OnOrderCancelled;
     public UnityEvent<OrderData, float, float> OnDeadlineTick;
     public UnityEvent OnPendingOrdersChanged;
     public UnityEvent<string, int, int> OnProgressUpdated;
@@ -125,6 +127,22 @@ public class OrderManager : MonoBehaviour
         OnOrderCompleted?.Invoke(order);
         _active.Remove(ao);
         return true;
+    }
+
+    public void CancelOrder(OrderData order)
+    {
+        var ao = _active.Find(a => a.order == order);
+        if (ao == null) return;
+
+        // Penalty
+        GameManager.Instance.SpendCredits(cancelMoneyPenalty);
+        
+        // Cleanup production
+        ProductionManager.Instance.CancelTasksForOrder(order);
+
+        OnOrderCancelled?.Invoke(order);
+        _active.Remove(ao);
+        Debug.Log($"[OrderManager] Order '{order.orderName}' cancelled manually. Penalty -{cancelMoneyPenalty} credits.");
     }
 
     private void OnBatchReady(BatchJob job)
