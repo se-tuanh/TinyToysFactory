@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
+using System.Collections.Generic;
 
 /// <summary>
 /// UpgradeShopUI — In-game upgrade panel toggled with Tab key or shopButton.
@@ -50,7 +51,7 @@ public class UpgradeShopUI : MonoBehaviour
         if (shopButton) shopButton.onClick.AddListener(ToggleShop);
 
         // Find Templates (find all unique machines in scene)
-        var allMachines = GameObject.FindObjectsOfType<Machine>();
+        var allMachines = GameObject.FindObjectsByType<Machine>(FindObjectsSortMode.None);
         var assemblyList = new List<Machine>();
         var paintList = new List<Machine>();
         var addedProdsA = new HashSet<ProductData>();
@@ -167,8 +168,6 @@ public class UpgradeShopUI : MonoBehaviour
         if (newMachine.HasWorker) newMachine.ToggleWorker(); // Release copied worker flag without interacting with ResourceManager
         // The new machine's Start() will register it to ProductionManager automatically
         
-        SetLabel(type == Machine.MachineType.AssemblyA ? buyAssemblyLabel : buyPaintLabel, 
-                $"+1 {(type == Machine.MachineType.AssemblyA ? "Assembly" : "Paint")}\n${GetMachineCost(type)}");
         Debug.Log($"[UpgradeShop] Purchased new {type} machine!");
     }
 
