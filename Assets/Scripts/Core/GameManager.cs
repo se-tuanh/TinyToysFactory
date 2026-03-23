@@ -90,15 +90,40 @@ public class GameManager : MonoBehaviour
         }
     }
 
+    //public void AddCredits(int amount)
+    //{
+    //    Credits += amount;
+    //    OnCreditsChanged?.Invoke(Credits);
+    //}
+
+    //public bool SpendCredits(int amount)
+    //{
+    //    if (Credits < amount) return false;
+    //    Credits -= amount;
+    //    OnCreditsChanged?.Invoke(Credits);
+    //    return true;
+    //}
     public void AddCredits(int amount)
     {
-        Credits += amount;
+        if (amount > 0)
+        {
+            Credits += amount;
+        }
+        else
+        {
+            Credits = Mathf.Max(0, Credits + amount);
+        }
         OnCreditsChanged?.Invoke(Credits);
     }
 
     public bool SpendCredits(int amount)
     {
-        if (Credits < amount) return false;
+        if (Credits < amount)
+        {
+            Debug.LogWarning("Ví đã cạn, sếp vui lòng cày thêm đơn! Giao dịch thất bại.");
+            return false;
+        }
+
         Credits -= amount;
         OnCreditsChanged?.Invoke(Credits);
         return true;

@@ -4,7 +4,7 @@ using UnityEngine;
 using UnityEngine.Events;
 
 /// <summary>
-/// ProductionManager — Controls production flow between Process A (Assembly) and B (Paint &amp; Pack).
+/// ProductionManager — Controls production flow between Process A (Assembly) and B (Paint & Pack).
 /// Fires batch-complete events consumed by OrderManager and UIManager.
 ///
 /// NEW: ProductionQueue — player enqueues ProductionTasks for specific orders.
@@ -21,17 +21,17 @@ public class ProductionManager : MonoBehaviour
 
     [Header("Multipliers per Mode")]
     [Tooltip("Fast: 1.4x speed, 1.2x resource cost | Safe: 1x | Quality: 0.8x speed, extra rep")]
-    public float fastSpeedMultiplier    = 1.4f;
-    public float fastCostMultiplier     = 1.2f;
+    public float fastSpeedMultiplier = 1.4f;
+    public float fastCostMultiplier = 1.2f;
     public float qualitySpeedMultiplier = 0.8f;
-    public int   qualityReputationBonus = 2;
+    public int qualityReputationBonus = 2;
 
     [Header("Storage Buffer (A → B)")]
     public int maxBufferSize = 5; // batches waiting between A and B
 
     // ── Management State ─────────────────────────────────────────────────
-    private List<Machine>    _registeredMachines = new List<Machine>();
-    private Queue<BatchJob>  _wipBuffer          = new Queue<BatchJob>(); // A → B buffer
+    private List<Machine> _registeredMachines = new List<Machine>();
+    private Queue<BatchJob> _wipBuffer = new Queue<BatchJob>(); // A → B buffer
 
     // ── Production Queue (order-driven) ──────────────────────────────────
     private List<ProductionTask> _productionQueue = new List<ProductionTask>();
@@ -43,11 +43,11 @@ public class ProductionManager : MonoBehaviour
     public bool IsProcessBRunning => GetMachineRunning(Machine.MachineType.PaintPackB);
 
     // ── Events ───────────────────────────────────────────────────────────
-    public UnityEvent<int>      OnBufferChanged;       // buffer count changed
+    public UnityEvent<int> OnBufferChanged;       // buffer count changed
     public UnityEvent<BatchJob> OnBatchCompletedA;     // Assembly batch done → sends to buffer
     public UnityEvent<BatchJob> OnBatchCompletedB;     // Paint&Pack batch done → product in inventory
-    public UnityEvent           OnProductionABlocked;
-    public UnityEvent           OnProductionBBlocked;
+    public UnityEvent OnProductionABlocked;
+    public UnityEvent OnProductionBBlocked;
     /// <summary>Fires whenever the production queue changes (for UI).</summary>
     public UnityEvent<IReadOnlyList<ProductionTask>> OnQueueChanged;
 
@@ -88,13 +88,15 @@ public class ProductionManager : MonoBehaviour
         Debug.Log($"[ProductionManager] WIP received: {job.product.productName}. Buffer: {_wipBuffer.Count}/{maxBufferSize}");
     }
 
-    public BatchJob DequeueWIP(ProductData requiredProduct)
+    // 🔥 ĐÃ SỬA: Cho phép requiredProduct = null để bốc đại phôi cũ nhất trong rổ
+    public BatchJob DequeueWIP(ProductData requiredProduct = null)
     {
         // Seek the first matching product type in the buffer
         var tempList = new List<BatchJob>(_wipBuffer);
         for (int i = 0; i < tempList.Count; i++)
         {
-            if (tempList[i].product == requiredProduct)
+            // Thêm điều kiện (requiredProduct == null)
+            if (requiredProduct == null || tempList[i].product == requiredProduct)
             {
                 var job = tempList[i];
                 tempList.RemoveAt(i);
@@ -160,16 +162,15 @@ public class ProductionManager : MonoBehaviour
         FireQueueChanged();
     }
 
-    /// <summary>
-    /// Machines call this when idle to pick up a task.
-    /// Returns null if no pending task exists for this product.
-    /// </summary>
-    public ProductionTask DequeueTask(ProductData product)
+    // 🔥 ĐÃ SỬA: Cho phép product = null để nhận bất kỳ task nào
+    public ProductionTask DequeueTask(ProductData product = null)
     {
         for (int i = 0; i < _productionQueue.Count; i++)
         {
             var task = _productionQueue[i];
-            if (task.product == product && task.quantityNeeded > task.quantityScheduled)
+
+            // Thêm điều kiện (product == null)
+            if ((product == null || task.product == product) && task.quantityNeeded > task.quantityScheduled)
             {
                 task.quantityScheduled += task.quantityNeeded - task.quantityScheduled; // mark all as scheduled
                 FireQueueChanged();
@@ -215,9 +216,9 @@ public class ProductionManager : MonoBehaviour
     {
         return currentMode switch
         {
-            ProductionMode.Fast    => fastSpeedMultiplier,
+            ProductionMode.Fast => fastSpeedMultiplier,
             ProductionMode.Quality => qualitySpeedMultiplier,
-            _                      => 1f
+            _ => 1f
         };
     }
 
@@ -266,12 +267,12 @@ public class ProductionManager : MonoBehaviour
 public class BatchJob
 {
     public ProductData product;
-    public int         quantity;
-    public float       duration;
+    public int quantity;
+    public float duration;
 
     public BatchJob(ProductData product, int quantity, float duration)
     {
-        this.product  = product;
+        this.product = product;
         this.quantity = quantity;
         this.duration = duration;
     }
@@ -285,18 +286,18 @@ public class BatchJob
 [System.Serializable]
 public class ProductionTask
 {
-    public OrderData   order;           // which order this task fulfils (null = free production)
+    public OrderData order;           // which order this task fulfils (null = free production)
     public ProductData product;         // what to produce
-    public int         quantityNeeded;  // total units to produce
-    public int         quantityScheduled; // units already picked up by a machine
+    public int quantityNeeded;  // total units to produce
+    public int quantityScheduled; // units already picked up by a machine
 
     public int Remaining => Mathf.Max(0, quantityNeeded - quantityScheduled);
 
     public ProductionTask(OrderData order, ProductData product, int quantity)
     {
-        this.order            = order;
-        this.product          = product;
-        this.quantityNeeded   = quantity;
+        this.order = order;
+        this.product = product;
+        this.quantityNeeded = quantity;
         this.quantityScheduled = 0;
     }
 }

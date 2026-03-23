@@ -28,7 +28,7 @@ MonoBehaviour:
   emergencyBuyCost: 50
   emergencyBuyAmount: 25
   maxActiveOrders: 3
-  orderExpireRepPenalty: 10
+  orderExpireRepPenalty: 20
   maxPendingOrders: 4
   allowManualOnlyAccept: 1
   tier2At: 60

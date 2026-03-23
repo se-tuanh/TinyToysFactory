@@ -8,34 +8,34 @@ using UnityEngine.Events;
 /// </summary>
 public class Machine : MonoBehaviour
 {
-    public enum MachineType  { AssemblyA, PaintPackB }
+    public enum MachineType { AssemblyA, PaintPackB }
     public enum MachineState { Idle, Working, WaitingInput, Warning }
 
     [Header("Config")]
-    public MachineType  machineType;
-    public ProductData  assignedProduct;
-    public int          batchQuantity = 1;
+    public MachineType machineType;
+    public ProductData assignedProduct;
+    public int batchQuantity = 1;
 
     [Header("Visuals")]
     public SpriteRenderer statusLight;    // green=idle, yellow=waiting, red=warning, blue=working
-    public Animator       machineAnimator;
+    public Animator machineAnimator;
     public ParticleSystem dustParticles;
 
     [Header("Audio")]
     public AudioSource audioSource;
-    public AudioClip   runningSound;
-    public AudioClip   completeSound;
-    public AudioClip   blockedSound;
+    public AudioClip runningSound;
+    public AudioClip completeSound;
+    public AudioClip blockedSound;
 
     // ── State ─────────────────────────────────────────────────────────────
     public MachineState CurrentState { get; private set; }
-    public bool         IsBlocked    { get; private set; }
+    public bool IsBlocked { get; private set; }
 
     private Coroutine _currentCycle;
     private Coroutine _pulseCycle;
-    private Vector3   _baseScale;
+    private Vector3 _baseScale;
 
-    public bool  HasWorker { get; private set; }
+    public bool HasWorker { get; private set; }
     public float Progress => _totalDuration > 0f ? Mathf.Clamp01(_elapsedTime / _totalDuration) : 0f;
 
     private float _elapsedTime;
@@ -58,7 +58,7 @@ public class Machine : MonoBehaviour
             pm.RegisterMachine(this);
             pm.OnProductionABlocked.AddListener(() =>
             {
-                if (machineType == MachineType.AssemblyA)  SetBlocked(true);
+                if (machineType == MachineType.AssemblyA) SetBlocked(true);
             });
             pm.OnProductionBBlocked.AddListener(() =>
             {
@@ -107,29 +107,28 @@ public class Machine : MonoBehaviour
 
     public bool TryStartBatch()
     {
-        if (assignedProduct == null)
+        if (IsBlocked || !HasWorker || CurrentState == MachineState.Working) return false;
+
+        // 🔥 ĐỘ MÁY LẮP RÁP (A): Xin đơn hàng mới nhất trên bảng thông báo
+        if (machineType == MachineType.AssemblyA)
         {
-            Debug.LogWarning($"[Machine:{name}] No product assigned! Assign a ProductData in Inspector.");
-            return false;
-        }
-        if (IsBlocked)
-        {
-            Debug.LogWarning($"[Machine:{name}] Machine is BLOCKED.");
-            return false;
-        }
-        if (!HasWorker)
-        {
-            Debug.Log($"[Machine:{name}] Cannot start without a worker.");
-            return false;
-        }
-        if (CurrentState == MachineState.Working)
-        {
-            return false;
+            var task = ProductionManager.Instance?.DequeueTask(null); // null = lấy đơn bất kỳ
+            if (task != null)
+            {
+                assignedProduct = task.product; // Tự động thay đổi khuôn đúc
+            }
+            else
+            {
+                Debug.Log($"[Machine:{name}] Hết việc! Đang chờ đơn mới rớt xuống.");
+                return false;
+            }
         }
 
-        Debug.Log($"[Machine:{name}] Starting {machineType} for '{assignedProduct.productName}'...");
-        return machineType == MachineType.AssemblyA ? StartAssemblyCycle()
-                                                    : StartPaintCycle();
+        // Đảm bảo máy đã có khuôn mới được chạy
+        if (assignedProduct == null && machineType == MachineType.AssemblyA) return false;
+
+        Debug.Log($"[Machine:{name}] Starting {machineType} for '{assignedProduct?.productName}'...");
+        return machineType == MachineType.AssemblyA ? StartAssemblyCycle() : StartPaintCycle();
     }
 
     // ── Production Cycles ─────────────────────────────────────────────────
@@ -138,7 +137,7 @@ public class Machine : MonoBehaviour
         var rm = ResourceManager.Instance;
         var pm = ProductionManager.Instance;
 
-        int woodCost  = Mathf.RoundToInt(assignedProduct.woodPlasticCost * batchQuantity * pm.GetCostMultiplier());
+        int woodCost = Mathf.RoundToInt(assignedProduct.woodPlasticCost * batchQuantity * pm.GetCostMultiplier());
         int powerCost = assignedProduct.powerPerAssembly * batchQuantity;
 
         if (rm.WoodPlastic < woodCost || rm.Power < powerCost)
@@ -180,17 +179,22 @@ public class Machine : MonoBehaviour
 
     private bool StartPaintCycle()
     {
-        var rm  = ResourceManager.Instance;
-        var pm  = ProductionManager.Instance;
+        var rm = ResourceManager.Instance;
+        var pm = ProductionManager.Instance;
 
-        BatchJob job = pm.DequeueWIP(assignedProduct);
+        // Nhặt đại 1 cái phôi bất kỳ đang có trong rổ ra sơn
+        BatchJob job = pm.DequeueWIP(null);
         if (job == null)
         {
-            Debug.LogWarning($"[Machine:{name}] No WIP in buffer for Paint.");
+            Debug.LogWarning($"[Machine:{name}] Rổ trống! Chưa có phôi nào để sơn.");
             SetState(MachineState.WaitingInput);
             return false;
         }
 
+        // Tự động chuyển màu sơn theo món hàng vừa nhặt được
+        assignedProduct = job.product;
+
+        // 🔥 Đã xóa khai báo trùng lặp ở đây
         int paintCost = Mathf.RoundToInt(job.product.paintFabricCost * job.quantity * pm.GetCostMultiplier());
         int powerCost = job.product.powerPerPaint * job.quantity;
 
@@ -253,16 +257,8 @@ public class Machine : MonoBehaviour
         PlaySound(completeSound, loop: false);
         OnMachineCompleted?.Invoke();
 
-        // ── Order-driven: auto-continue if there is a queued task for this product ──
-        if (assignedProduct != null && machineType == MachineType.AssemblyA)
-        {
-            var task = ProductionManager.Instance?.DequeueTask(assignedProduct);
-            if (task != null)
-            {
-                Debug.Log($"[Machine:{name}] Auto-starting next batch for order '{task.order?.orderName}'");
-                TryStartBatch();
-            }
-        }
+        Debug.Log($"[Machine:{name}] Xong lô hàng! Đi xin việc tiếp...");
+        TryStartBatch();
     }
 
     public void SetBlocked(bool blocked)
@@ -292,13 +288,13 @@ public class Machine : MonoBehaviour
     {
         CurrentState = newState;
 
-        string animState  = "Idle";
-        Color  lightColor = Color.green;
+        string animState = "Idle";
+        Color lightColor = Color.green;
 
         switch (newState)
         {
             case MachineState.Working:
-                animState  = "Running";
+                animState = "Running";
                 lightColor = Color.blue;
                 if (dustParticles) dustParticles.Play();
                 PlaySound(runningSound, loop: true);
@@ -307,14 +303,14 @@ public class Machine : MonoBehaviour
                 break;
 
             case MachineState.Warning:
-                animState  = "Idle";
+                animState = "Idle";
                 lightColor = Color.red;
                 if (dustParticles) dustParticles.Stop();
                 StopSound();
                 break;
 
             case MachineState.WaitingInput:
-                animState  = "Idle";
+                animState = "Idle";
                 lightColor = Color.yellow;
                 if (dustParticles) dustParticles.Stop();
                 StopSound();
@@ -322,7 +318,7 @@ public class Machine : MonoBehaviour
                 break;
 
             case MachineState.Idle:
-                animState  = "Idle";
+                animState = "Idle";
                 lightColor = Color.green;
                 if (dustParticles) dustParticles.Stop();
                 StopSound();
@@ -331,7 +327,7 @@ public class Machine : MonoBehaviour
         }
 
         if (machineAnimator) machineAnimator.Play(animState);
-        if (statusLight)     statusLight.color = lightColor;
+        if (statusLight) statusLight.color = lightColor;
     }
 
     private void PlaySound(AudioClip clip, bool loop)
@@ -363,7 +359,7 @@ public class Machine : MonoBehaviour
     private IEnumerator PulseScale()
     {
         const float PULSE_TIME = 0.4f;
-        const float PEAK       = 1.07f;
+        const float PEAK = 1.07f;
         while (true)
         {
             // scale up
