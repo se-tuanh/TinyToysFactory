@@ -62,11 +62,14 @@ public class UpgradeShopUI : MonoBehaviour
         if (buyPaintBtn)      buyPaintBtn     .onClick.AddListener(BuyPaint);
 
         // Update labels
+        string aProd = templateAssemblyMachine != null && templateAssemblyMachine.assignedProduct != null ? templateAssemblyMachine.assignedProduct.productName : "Assembly";
+        string pProd = templatePaintMachine != null && templatePaintMachine.assignedProduct != null ? templatePaintMachine.assignedProduct.productName : "Paint";
+
         SetLabel(workerUpgradeLabel, $"+1 Worker\n${workerUpgradeCost}");
         SetLabel(bufferUpgradeLabel, $"+2 Buffer\n${bufferUpgradeCost}");
         SetLabel(powerRestoreLabel,  $"⚡ Power +{powerRestoreAmount}\n${powerRestoreCost}");
-        SetLabel(buyAssemblyLabel,   $"+1 Assembly\n${GetMachineCost(Machine.MachineType.AssemblyA)}");
-        SetLabel(buyPaintLabel,      $"+1 Paint\n${GetMachineCost(Machine.MachineType.PaintPackB)}");
+        SetLabel(buyAssemblyLabel,   $"+1 Ráp {aProd}\n${GetMachineCost(Machine.MachineType.AssemblyA)}");
+        SetLabel(buyPaintLabel,      $"+1 Sơn {pProd}\n${GetMachineCost(Machine.MachineType.PaintPackB)}");
 
         // Refresh affordability whenever credits change
         GameManager.Instance.OnCreditsChanged.AddListener(_ => RefreshButtons());
@@ -172,8 +175,11 @@ public class UpgradeShopUI : MonoBehaviour
         SetInteractable(buyAssemblyBtn,   credits >= GetMachineCost(Machine.MachineType.AssemblyA));
         SetInteractable(buyPaintBtn,      credits >= GetMachineCost(Machine.MachineType.PaintPackB));
         
-        SetLabel(buyAssemblyLabel, $"+1 Assembly\n${GetMachineCost(Machine.MachineType.AssemblyA)}");
-        SetLabel(buyPaintLabel,    $"+1 Paint\n${GetMachineCost(Machine.MachineType.PaintPackB)}");
+        string aProd = templateAssemblyMachine != null && templateAssemblyMachine.assignedProduct != null ? templateAssemblyMachine.assignedProduct.productName : "Assembly";
+        string pProd = templatePaintMachine != null && templatePaintMachine.assignedProduct != null ? templatePaintMachine.assignedProduct.productName : "Paint";
+
+        SetLabel(buyAssemblyLabel, $"+1 Ráp {aProd}\n${GetMachineCost(Machine.MachineType.AssemblyA)}");
+        SetLabel(buyPaintLabel,    $"+1 Sơn {pProd}\n${GetMachineCost(Machine.MachineType.PaintPackB)}");
     }
 
     private static void SetInteractable(Button btn, bool on)

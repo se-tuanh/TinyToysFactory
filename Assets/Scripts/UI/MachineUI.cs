@@ -23,10 +23,47 @@ public class MachineUI : MonoBehaviour
         if (machine == null) machine = GetComponentInParent<Machine>();
         if (machine == null) return;
 
+        // Self-healing: Create label if null (useful for machines bought in shop)
+        if (machineNameText == null)
+        {
+            SetupAutoLabel();
+        }
+
         if (workerButton != null)
         {
             workerButton.onClick.AddListener(OnWorkerButtonClicked);
         }
+    }
+
+    private void SetupAutoLabel()
+    {
+        // Check if there's already a label child we missed
+        var existing = transform.Find("MachineLabelCanvas/NameLabel")?.GetComponent<TextMeshProUGUI>();
+        if (existing != null)
+        {
+            machineNameText = existing;
+            return;
+        }
+
+        // Create a world-space label above the machine
+        GameObject canvasObj = new GameObject("MachineLabelCanvas");
+        canvasObj.transform.SetParent(machine.transform);
+        canvasObj.transform.localPosition = new Vector3(0, 2.5f, 0);
+        
+        Canvas c = canvasObj.AddComponent<Canvas>();
+        c.renderMode = RenderMode.WorldSpace;
+        
+        RectTransform rt = canvasObj.GetComponent<RectTransform>();
+        rt.sizeDelta = new Vector2(200, 50);
+        rt.localScale = new Vector3(0.01f, 0.01f, 0.01f);
+
+        GameObject textObj = new GameObject("NameLabel");
+        textObj.transform.SetParent(canvasObj.transform, false);
+        
+        machineNameText = textObj.AddComponent<TextMeshProUGUI>();
+        machineNameText.fontSize = 24;
+        machineNameText.alignment = TextAlignmentOptions.Center;
+        machineNameText.color = Color.white;
     }
 
     private void Update()
