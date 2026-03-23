@@ -10,6 +10,7 @@ public class MachineUI : MonoBehaviour
     public Button workerButton;
     public Image workerButtonImage;
     public TextMeshProUGUI workerButtonText;
+    public TextMeshProUGUI machineNameText;
     
     public Image progressBarFill;
     public GameObject progressBarContainer;
@@ -37,6 +38,12 @@ public class MachineUI : MonoBehaviour
         {
             workerButtonImage.color = machine.HasWorker ? ColorOn : ColorOff;
             workerButtonText.text = machine.HasWorker ? "Worker: ON" : "Worker: OFF";
+        }
+
+        // Update Machine Name
+        if (machineNameText != null)
+        {
+            machineNameText.text = machine.name; // or machine.assignedProduct.productName
         }
 
         // Update Progress Bar Visuals
