@@ -194,7 +194,7 @@ public class Machine : MonoBehaviour
         // Tự động chuyển màu sơn theo món hàng vừa nhặt được
         assignedProduct = job.product;
 
-        // 🔥 Đã xóa khai báo trùng lặp ở đây
+      
         int paintCost = Mathf.RoundToInt(job.product.paintFabricCost * job.quantity * pm.GetCostMultiplier());
         int powerCost = job.product.powerPerPaint * job.quantity;
 
