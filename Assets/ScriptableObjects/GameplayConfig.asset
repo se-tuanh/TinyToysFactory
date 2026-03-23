@@ -13,7 +13,7 @@ MonoBehaviour:
   m_Name: GameplayConfig
   m_EditorClassIdentifier: 
   sessionDuration: 300
-  startingCredits: 400
+  startingCredits: 200
   startingReputation: 100
   reputationLoseAt: 0
   startingWoodPlastic: 150
@@ -27,10 +27,10 @@ MonoBehaviour:
   restockAmount: 40
   emergencyBuyCost: 50
   emergencyBuyAmount: 25
-  maxActiveOrders: 3
+  maxActiveOrders: 4
   orderExpireRepPenalty: 20
   maxPendingOrders: 4
-  allowManualOnlyAccept: 1
+  allowManualOnlyAccept: 0
   tier2At: 60
   tier3At: 120
   tier4At: 180

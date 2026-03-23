@@ -159,6 +159,13 @@ public class UpgradeShopUI : MonoBehaviour
 
     private void BuyPower()
     {
+        // Check if power is already at max
+        if (ResourceManager.Instance.Power >= ResourceManager.Instance.maxPower)
+        {
+            Debug.LogWarning("Điện năng đã đầy, không thể mua thêm!");
+            return;
+        }
+
         if (!GameManager.Instance.SpendCredits(powerRestoreCost)) return;
         ResourceManager.Instance.RestorePower(powerRestoreAmount);
         RefreshButtons();
@@ -241,7 +248,11 @@ public class UpgradeShopUI : MonoBehaviour
         
         SetInteractable(workerUpgradeBtn, credits >= workerUpgradeCost);
         SetInteractable(bufferUpgradeBtn, credits >= bufferUpgradeCost);
-        SetInteractable(powerRestoreBtn,  credits >= powerRestoreCost);
+        
+        // Disable power button if power is already at max
+        bool canBuyPower = credits >= powerRestoreCost && 
+                          ResourceManager.Instance.Power < ResourceManager.Instance.maxPower;
+        SetInteractable(powerRestoreBtn, canBuyPower);
         
         SetLabel(workerUpgradeLabel, $"+1 Worker\n${workerUpgradeCost}");
         SetLabel(bufferUpgradeLabel, $"+2 Buffer\n${bufferUpgradeCost}");

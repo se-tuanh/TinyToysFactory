@@ -76,8 +76,15 @@ public class PlayerInteraction : MonoBehaviour
             else if (_potentialMachine != null)
             {
                 // Simple click event (only if we didn't drag it)
-                if (_potentialMachine.CurrentState == Machine.MachineState.Working) _potentialMachine.SpeedUp();
-                else _potentialMachine.TryStartBatch();
+                if (_potentialMachine.CurrentState == Machine.MachineState.Working)
+                {
+                    _potentialMachine.SpeedUp();
+                }
+                else
+                {
+                    // Start a single batch when clicked while idle
+                    _potentialMachine.TryStartBatch();
+                }
             }
 
             _isDragging = false;

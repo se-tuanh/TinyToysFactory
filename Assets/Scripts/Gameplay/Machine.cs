@@ -33,6 +33,7 @@ public class Machine : MonoBehaviour
 
     private Coroutine _currentCycle;
     private Coroutine _pulseCycle;
+    private Coroutine _autoStartRetryCoroutine;
     private Vector3 _baseScale;
 
     public bool HasWorker { get; private set; }
@@ -40,6 +41,12 @@ public class Machine : MonoBehaviour
 
     private float _elapsedTime;
     private float _totalDuration;
+    private bool _isFreeProduction = false;  // Track if current job is free production
+    private int _consecutiveClicks = 0; // number of rapid clicks
+    private float _lastClickTime = 0f;
+    private const float CLICK_WINDOW = 1f; // time window to count consecutive clicks (seconds)
+    private const float BASE_FAIL_CHANCE = 0.10f; // base failure chance on a single SpeedUp
+    private const float FAIL_PER_EXTRA_CLICK = 0.07f; // additional failure chance per extra click
 
     // ── Events ────────────────────────────────────────────────────────────
     public UnityEvent OnMachineStarted;
@@ -72,6 +79,7 @@ public class Machine : MonoBehaviour
         if (HasWorker) ResourceManager.Instance?.ReleaseWorker();
         ProductionManager.Instance?.UnregisterMachine(this);
         StopCurrentCycle();
+        if (_autoStartRetryCoroutine != null) StopCoroutine(_autoStartRetryCoroutine);
     }
 
     // ── Interaction ───────────────────────────────────────────────────────
@@ -81,7 +89,11 @@ public class Machine : MonoBehaviour
         {
             ResourceManager.Instance.ReleaseWorker();
             HasWorker = false;
+            if (_autoStartRetryCoroutine != null) { StopCoroutine(_autoStartRetryCoroutine); _autoStartRetryCoroutine = null; }
             if (CurrentState == MachineState.Working) SetState(MachineState.WaitingInput); // pause visuals
+            // reset click tracking when worker removed
+            _consecutiveClicks = 0;
+            _lastClickTime = 0f;
             Debug.Log($"[Machine:{name}] Worker removed.");
         }
         else
@@ -90,44 +102,82 @@ public class Machine : MonoBehaviour
             {
                 HasWorker = true;
                 if (_currentCycle != null) SetState(MachineState.Working); // resume visuals
-                else TryStartBatch(); // Idle -> try to find work immediately
+                else 
+                {
+                    // Auto-start production immediately when worker assigned
+                    if (!TryStartBatch())
+                    {
+                        // If first attempt fails (no resources/tasks), start retry loop
+                        if (_autoStartRetryCoroutine != null) StopCoroutine(_autoStartRetryCoroutine);
+                        _autoStartRetryCoroutine = StartCoroutine(AutoStartRetryLoop());
+                    }
+                }
                 Debug.Log($"[Machine:{name}] Worker assigned.");
             }
         }
     }
 
+    // Nút Tăng Tốc giờ đã biến thành Nút Ép Xung Nhân Phẩm!
     public void SpeedUp()
     {
-        if (CurrentState == MachineState.Working && HasWorker)
+        if (CurrentState != MachineState.Working || !HasWorker) return;
+
+        var rm = ResourceManager.Instance;
+
+        // Each SpeedUp click consumes a small amount of extra power
+        int overclockPowerCost = 8; // slightly lower per-click cost
+        if (!rm.ConsumePower(overclockPowerCost))
         {
-            _elapsedTime += 0.5f; // Jump forward 0.5s per click
-            // Optional: spawn particle or flash
+            Debug.LogWarning($"[Machine:{name}] Sập nguồn! Không đủ điện để ép xung.");
+            return;
         }
+
+        // Track consecutive clicks within a short window
+        if (Time.time - _lastClickTime <= CLICK_WINDOW) _consecutiveClicks++; else _consecutiveClicks = 1;
+        _lastClickTime = Time.time;
+
+        // Failure chance increases with rapid clicks
+        float failChance = BASE_FAIL_CHANCE + FAIL_PER_EXTRA_CLICK * (_consecutiveClicks - 1);
+        failChance = Mathf.Clamp01(failChance);
+        if (Random.value < failChance)
+        {
+            Debug.LogError($"[Machine:{name}] QUÁ TẢI! CHÁY MÁY RỒI!!! (clicks={_consecutiveClicks}, failChance={failChance:F2})");
+            StartCoroutine(OverloadRecoveryRoutine()); 
+            return;
+        }
+
+        // Boost progress scaled by consecutive clicks (each click adds 15% of total duration)
+        float perClickBoost = 0.15f; // 15% per click
+        float boostAmount = _totalDuration * perClickBoost * _consecutiveClicks;
+        _elapsedTime += boostAmount;
+        if (_elapsedTime >= _totalDuration) _elapsedTime = _totalDuration;
     }
 
+    // CÁI HÀM BỊ SẾP XÓA MẤT NẰM Ở ĐÂY NÀY:
     public bool TryStartBatch()
     {
         if (IsBlocked || !HasWorker || CurrentState == MachineState.Working) return false;
 
-        // 🔥 ĐỘ MÁY LẮP RÁP (A): Xin đơn hàng mới nhất trên bảng thông báo
-        if (machineType == MachineType.AssemblyA)
+        // Bắt buộc phải có Product mới chạy
+        if (assignedProduct == null)
         {
-            var task = ProductionManager.Instance?.DequeueTask(null); // null = lấy đơn bất kỳ
-            if (task != null)
-            {
-                assignedProduct = task.product; // Tự động thay đổi khuôn đúc
-            }
-            else
-            {
-                Debug.Log($"[Machine:{name}] Hết việc! Đang chờ đơn mới rớt xuống.");
-                return false;
-            }
+            Debug.LogWarning($"[Machine:{name}] LỖI: Chưa gắn ProductData vào ô Assigned Product!");
+            return false;
         }
 
-        // Đảm bảo máy đã có khuôn mới được chạy
-        if (assignedProduct == null && machineType == MachineType.AssemblyA) return false;
+        if (machineType == MachineType.AssemblyA)
+        {
+            // Try to get a production task first
+            var task = ProductionManager.Instance?.DequeueTask(assignedProduct);
+            if (task == null)
+            {
+                // No task available - allow free production for player choice
+                Debug.Log($"[Machine:{name}] Không có đơn, nhưng vẫn cho phép sản xuất tự do {assignedProduct.productName}");
+            }
+            // Continue regardless - either with task or free production
+        }
 
-        Debug.Log($"[Machine:{name}] Starting {machineType} for '{assignedProduct?.productName}'...");
+        Debug.Log($"[Machine:{name}] Starting {machineType} for '{assignedProduct.productName}'...");
         return machineType == MachineType.AssemblyA ? StartAssemblyCycle() : StartPaintCycle();
     }
 
@@ -158,10 +208,11 @@ public class Machine : MonoBehaviour
     {
         SetState(MachineState.Working);
 
+        var pm = ProductionManager.Instance;
         _totalDuration = assignedProduct.assemblyTime
                        * batchQuantity
-                       * ProductionManager.Instance.GetProductionTimeMultiplier()
-                       / ProductionManager.Instance.GetSpeedMultiplier();
+                       * (pm != null ? pm.GetProductionTimeMultiplier() : 1f)
+                       / (pm != null ? pm.GetSpeedMultiplier() : 1f);
         _elapsedTime = 0f;
 
         while (_elapsedTime < _totalDuration)
@@ -171,7 +222,7 @@ public class Machine : MonoBehaviour
         }
 
         var job = new BatchJob(assignedProduct, batchQuantity, _totalDuration);
-        ProductionManager.Instance.ReceiveWIP(job);   // → fires OnBatchCompletedA
+        if (pm != null) pm.ReceiveWIP(job);   // → fires OnBatchCompletedA
 
         _currentCycle = null;
         OnBatchDone();
@@ -182,19 +233,19 @@ public class Machine : MonoBehaviour
         var rm = ResourceManager.Instance;
         var pm = ProductionManager.Instance;
 
-        // Nhặt đại 1 cái phôi bất kỳ đang có trong rổ ra sơn
-        BatchJob job = pm.DequeueWIP(null);
+        // Try to dequeue WIP from buffer
+        BatchJob job = pm.DequeueWIP(assignedProduct);
+        _isFreeProduction = false;
+        
         if (job == null)
         {
-            Debug.LogWarning($"[Machine:{name}] Rổ trống! Chưa có phôi nào để sơn.");
-            SetState(MachineState.WaitingInput);
-            return false;
+            // Buffer is empty - allow free production if player wants to paint anyway
+            Debug.Log($"[Machine:{name}] Rổ trống, sơn tự do {assignedProduct.productName}");
+            // Create a dummy batch job for free production
+            job = new BatchJob(assignedProduct, batchQuantity, 0f);
+            _isFreeProduction = true;
         }
 
-        // Tự động chuyển màu sơn theo món hàng vừa nhặt được
-        assignedProduct = job.product;
-
-      
         int paintCost = Mathf.RoundToInt(job.product.paintFabricCost * job.quantity * pm.GetCostMultiplier());
         int powerCost = job.product.powerPerPaint * job.quantity;
 
@@ -202,7 +253,8 @@ public class Machine : MonoBehaviour
         {
             Debug.LogWarning($"[Machine:{name}] Not enough resources for Paint.");
             SetState(MachineState.Warning);
-            pm.ReturnWIP(job);
+            // Only return WIP if it came from buffer (not free production)
+            if (!_isFreeProduction && pm != null && pm.CanReceiveWIP()) pm.ReturnWIP(job);
             return false;
         }
 
@@ -210,7 +262,8 @@ public class Machine : MonoBehaviour
         {
             Debug.LogWarning($"[Machine:{name}] Inventory full — Paint blocked.");
             SetState(MachineState.Warning);
-            pm.ReturnWIP(job);
+            // Only return WIP if it came from buffer (not free production)
+            if (!_isFreeProduction && pm != null) pm.ReturnWIP(job);
             return false;
         }
 
@@ -225,6 +278,8 @@ public class Machine : MonoBehaviour
         return true;
     }
 
+
+
     private IEnumerator PaintCycleRoutine(BatchJob job)
     {
         SetState(MachineState.Working);
@@ -237,13 +292,24 @@ public class Machine : MonoBehaviour
             yield return null;
         }
 
-        ResourceManager.Instance.AddProduct(job.product, job.quantity);
+        var rm = ResourceManager.Instance;
+        if (rm != null) rm.AddProduct(job.product, job.quantity);
 
         var pm = ProductionManager.Instance;
-        if (pm.currentMode == ProductionManager.ProductionMode.Quality)
-            GameManager.Instance.AddReputation(pm.qualityReputationBonus * job.quantity);
+        if (pm != null)
+        {
+            if (pm.currentMode == ProductionManager.ProductionMode.Quality)
+            {
+                var gm = GameManager.Instance;
+                if (gm != null) gm.AddReputation(pm.qualityReputationBonus * job.quantity);
+            }
 
-        pm.NotifyBatchCompletedB(job);   // → fires OnBatchCompletedB (consumed by OrderManager & UIManager)
+            // Only notify ProductionManager if this was a real job from buffer (not free production)
+            if (!_isFreeProduction)
+            {
+                pm.NotifyBatchCompletedB(job);   // → fires OnBatchCompletedB (consumed by OrderManager & UIManager)
+            }
+        }
 
         _currentCycle = null;
         OnBatchDone();
@@ -258,7 +324,6 @@ public class Machine : MonoBehaviour
         OnMachineCompleted?.Invoke();
 
         Debug.Log($"[Machine:{name}] Xong lô hàng! Đi xin việc tiếp...");
-        TryStartBatch();
     }
 
     public void SetBlocked(bool blocked)
@@ -270,6 +335,9 @@ public class Machine : MonoBehaviour
             SetState(MachineState.Warning);
             PlaySound(blockedSound, loop: false);
             OnMachineBlocked?.Invoke();
+            // reset click tracking when machine breaks
+            _consecutiveClicks = 0;
+            _lastClickTime = 0f;
         }
         else
         {
@@ -343,6 +411,24 @@ public class Machine : MonoBehaviour
         if (audioSource) audioSource.Stop();
     }
 
+    private IEnumerator OverloadRecoveryRoutine()
+    {
+        SetBlocked(true);
+    
+        float recoveryDelay = Random.Range(3f, 5f);
+        Debug.Log($"[Machine:{name}] ĐANG QUÁ TẢI! Cần {recoveryDelay:F1}s để hạ nhiệt...");
+
+        yield return new WaitForSeconds(recoveryDelay);
+
+        SetBlocked(false);
+        Debug.Log($"[Machine:{name}] Máy đã nguội, sẵn sàng hoạt động lại!");
+
+        if (HasWorker)
+        {
+            TryStartBatch();
+        }
+    }
+
     // ── Scale Pulse ───────────────────────────────────────────────────────
     private void StartPulse()
     {
@@ -380,6 +466,37 @@ public class Machine : MonoBehaviour
                 transform.localScale = _baseScale * s;
                 yield return null;
             }
+        }
+    }
+
+    // ── Auto-Start Retry ──────────────────────────────────────────────────
+    /// <summary>
+    /// Continuously tries to start batch production until it succeeds.
+    /// This ensures production starts automatically as soon as resources become available.
+    /// </summary>
+    private IEnumerator AutoStartRetryLoop()
+    {
+        float maxRetryDuration = 10f; // Give up after 10 seconds
+        float retryStartTime = Time.time;
+
+        while (HasWorker && CurrentState != MachineState.Working)
+        {
+            if (Time.time - retryStartTime > maxRetryDuration)
+            {
+                Debug.Log($"[Machine:{name}] Auto-start retry timed out after {maxRetryDuration}s. Worker idle.");
+                _autoStartRetryCoroutine = null;
+                break;
+            }
+
+            if (TryStartBatch())
+            {
+                Debug.Log($"[Machine:{name}] Auto-start succeeded after {Time.time - retryStartTime:F2}s");
+                _autoStartRetryCoroutine = null;
+                break;
+            }
+
+            // Retry every 0.5 seconds
+            yield return new WaitForSeconds(0.5f);
         }
     }
 }

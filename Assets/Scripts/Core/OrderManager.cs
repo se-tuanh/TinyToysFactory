@@ -10,8 +10,8 @@ public class OrderManager : MonoBehaviour
     public GameplayConfig config;
 
     [Header("Settings")]
-    public float spawnInterval = 10f;
-    private float _spawnTimer = 0f;
+    public float spawnInterval = 30f;
+    private float _spawnTimer = 30f;
     public int expireMoneyPenalty = 50;
     public int cancelMoneyPenalty = 20;
     public int _maxActive = 10;     
@@ -58,8 +58,16 @@ public class OrderManager : MonoBehaviour
 
             if (ao.timeRemaining <= 0f)
             {
-                ExpireOrder(ao);
-                _active.RemoveAt(i);
+                ao.isExpired = true;  // Mark expired FIRST
+                _active.RemoveAt(i);  // Remove BEFORE firing events
+                
+                // Now fire penalty after removal
+                int repPenalty = config ? config.orderExpireRepPenalty : 10;
+                GameManager.Instance.SpendCredits(expireMoneyPenalty);
+                GameManager.Instance.AddReputation(-repPenalty);
+
+                OnOrderFailed?.Invoke(ao.order);
+                OnOrderExpired?.Invoke(ao.order);
             }
         }
     }
@@ -121,6 +129,24 @@ public class OrderManager : MonoBehaviour
     {
         var ao = _active.Find(a => a.order == order);
         if (ao == null) return false;
+        if (ao.isExpired) return false;
+        // Consume products from inventory when delivering
+        var rm = ResourceManager.Instance;
+        if (rm != null)
+        {
+            foreach (var req in order.requiredProducts)
+            {
+                int needed = req.quantity;
+                bool ok = rm.RemoveProduct(req.product, needed);
+                if (!ok)
+                {
+                    Debug.LogWarning($"[OrderManager] Not enough inventory to remove {needed}x {req.product.productName} when fulfilling '{order.orderName}'. Removing available amount instead.");
+                    int available = rm.GetProductCount(req.product);
+                    if (available > 0) rm.RemoveProduct(req.product, available);
+                }
+            }
+        }
+
         GameManager.Instance.AddCredits(order.creditsReward);
         GameManager.Instance.AddReputation(order.reputationReward);
         OnOrderCompleted?.Invoke(order);
@@ -146,13 +172,22 @@ public class OrderManager : MonoBehaviour
 
     private void OnBatchReady(BatchJob job)
     {
+        Debug.Log($"[OrderManager.OnBatchReady] Batch ready: {job.product.productName}x{job.quantity}");
         for (int i = _active.Count - 1; i >= 0; i--)
         {
             var ao = _active[i];
 
+            // Skip if order has expired
+            if (ao.isExpired || ao.timeRemaining <= 0f)
+            {
+                Debug.Log($"[OrderManager.OnBatchReady] Skipping expired order '{ao.order.orderName}' - isExpired={ao.isExpired}, timeRemaining={ao.timeRemaining}");
+                continue;
+            }
+
             if (ao.shipped.ContainsKey(job.product.productName))
             {
                 ao.shipped[job.product.productName] += job.quantity;
+                Debug.Log($"[OrderManager.OnBatchReady] Added batch to order '{ao.order.orderName}': {job.product.productName}x{job.quantity}");
 
                 // Cập nhật tiến độ UI
                 foreach (var req in ao.order.requiredProducts)
@@ -171,22 +206,31 @@ public class OrderManager : MonoBehaviour
 
     private void CheckCompletion(ActiveOrder ao)
     {
+        // Don't complete if order has expired
+        if (ao.isExpired || ao.timeRemaining <= 0f)
+        {
+            Debug.Log($"[OrderManager.CheckCompletion] Skipped expired order '{ao.order.orderName}' - isExpired={ao.isExpired}, timeRemaining={ao.timeRemaining}");
+            return;
+        }
+
         bool done = true;
         foreach (var req in ao.order.requiredProducts)
         {
             if (ao.shipped[req.product.productName] < req.quantity) { done = false; break; }
         }
-        if (done) FulfillOrder(ao.order);
+        if (done)
+        {
+            Debug.Log($"[OrderManager.CheckCompletion] Order '{ao.order.orderName}' completed! Fulfilling...");
+            FulfillOrder(ao.order);
+        }
     }
 
+    // Expired orders are now handled directly in Update() loop
+    // This method is kept for backward compatibility but shouldn't be called directly
+    [System.Obsolete("Use Update loop instead")]
     private void ExpireOrder(ActiveOrder ao)
     {
-        int repPenalty = config ? config.orderExpireRepPenalty : 10;
-        GameManager.Instance.AddCredits(-expireMoneyPenalty);
-        GameManager.Instance.AddReputation(-repPenalty);
-
-        OnOrderFailed?.Invoke(ao.order);
-        OnOrderExpired?.Invoke(ao.order);
+        Debug.LogWarning("[OrderManager.ExpireOrder] This method should not be called directly! Use Update loop instead.");
     }
 }
 
@@ -195,5 +239,6 @@ public class ActiveOrder
 {
     public OrderData order;
     public float timeRemaining;
+    public bool isExpired = false;  // Flag to prevent completing expired orders
     public Dictionary<string, int> shipped = new Dictionary<string, int>();
 }

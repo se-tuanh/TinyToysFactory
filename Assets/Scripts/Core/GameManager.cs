@@ -35,6 +35,8 @@ public class GameManager : MonoBehaviour
     public UnityEvent OnGameLose;
 
     // ── Lifecycle ────────────────────────────────────────────────────────
+    private Coroutine _autoQueueCoroutine;
+
     private void Awake()
     {
         if (Instance != null && Instance != this) { Destroy(gameObject); return; }
@@ -69,7 +71,22 @@ public class GameManager : MonoBehaviour
         Credits       = config ? config.startingCredits  : 400;
         Reputation    = config ? config.startingReputation : 100;
         ChangeState(GameState.Playing);
-        Debug.Log("[GameManager] Game started");
+        Debug.Log("[GameManager] Game started - 30s preparation phase");
+        
+        // Schedule auto-queue to start after 30 seconds
+        if (_autoQueueCoroutine != null) StopCoroutine(_autoQueueCoroutine);
+        _autoQueueCoroutine = StartCoroutine(DelayedAutoQueueStart());
+    }
+
+    // ── Auto-Queue Production ──────────────────────────────────────────────────────────────────────────────────────
+    private System.Collections.IEnumerator DelayedAutoQueueStart()
+    {
+        // Wait 30 seconds for preparation phase
+        yield return new WaitForSeconds(30f);
+        
+        // Start auto-queueing after prep phase
+        if (_autoQueueCoroutine != null) StopCoroutine(_autoQueueCoroutine);
+        _autoQueueCoroutine = StartCoroutine(AutoQueueProductionRoutine());
     }
 
     public void PauseGame()
@@ -88,6 +105,42 @@ public class GameManager : MonoBehaviour
             Time.timeScale = 1f;
             ChangeState(GameState.Playing);
         }
+    }
+
+    // ── Auto-Queue Production ─────────────────────────────────────────────
+    private System.Collections.IEnumerator AutoQueueProductionRoutine()
+    {
+        if (config == null || config.autoQueueProduct == null)
+        {
+            Debug.LogWarning("[GameManager] Auto-queue product not configured in GameplayConfig!");
+            yield break;
+        }
+
+        float startTime = Time.time;
+        float autoDuration = config.autoQueueDuration; // 30s
+        var pm = ProductionManager.Instance;
+
+        if (pm == null)
+        {
+            Debug.LogError("[GameManager] ProductionManager not found!");
+            yield break;
+        }
+
+        Debug.Log($"[GameManager] Auto-queueing {config.autoQueueProduct.productName} for {autoDuration}s");
+
+        // Queue tasks every 2-3 seconds for 30 seconds
+        while (Time.time - startTime < autoDuration)
+        {
+            var task = new ProductionTask(null, config.autoQueueProduct, config.autoQueueQuantityPerTask);
+            pm.EnqueueTask(task);
+            Debug.Log($"[GameManager] Auto-queued task: {config.autoQueueProduct.productName} ×{config.autoQueueQuantityPerTask}");
+
+            // Queue next task in 2.5 seconds
+            yield return new WaitForSeconds(2.5f);
+        }
+
+        Debug.Log($"[GameManager] Auto-queue ended after {autoDuration}s");
+        _autoQueueCoroutine = null;
     }
 
     //public void AddCredits(int amount)

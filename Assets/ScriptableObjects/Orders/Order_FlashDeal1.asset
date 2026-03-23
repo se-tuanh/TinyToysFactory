@@ -20,7 +20,7 @@ MonoBehaviour:
     quantity: 1
   - product: {fileID: 11400000, guid: b3e553f89dc40574eadef950eb0d88a8, type: 2}
     quantity: 2
-  baseDeadline: 30
+  baseDeadline: 60
   creditsReward: 250
   reputationReward: 8
   bonusCreditsIfEarly: 60

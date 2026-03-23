@@ -70,4 +70,12 @@ public class GameplayConfig : ScriptableObject
 
     [Header("ToyKingdom Bonus")]
     public int   toyKingdomBulkBonus   = 30; // extra credits if all items delivered at once
+
+    [Header("Auto-Production (First 30s)")]
+    [Tooltip("Product to auto-queue during the first 30 seconds (e.g., Toy Car)")]
+    public ProductData autoQueueProduct;
+    [Tooltip("Duration in seconds to auto-queue tasks at game start")]
+    public float autoQueueDuration = 30f;
+    [Tooltip("Quantity per auto-queue task")]
+    public int autoQueueQuantityPerTask = 1;
 }
