@@ -8,7 +8,11 @@ public class SetupMachineLabels : EditorWindow
     [MenuItem("Tools/Setup Machine Labels in Scene")]
     public static void Execute()
     {
+#if UNITY_2022_2_OR_NEWER
+        Machine[] machines = GameObject.FindObjectsByType<Machine>(FindObjectsSortMode.None);
+#else
         Machine[] machines = GameObject.FindObjectsOfType<Machine>();
+#endif
         int count = 0;
 
         foreach (var m in machines)

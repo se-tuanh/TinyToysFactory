@@ -379,10 +379,10 @@ public class TinyToysSceneBuilder : EditorWindow
         upg.bufferUpgradeLabel = bufBtn.GetComponentInChildren<TextMeshProUGUI>();
         upg.powerRestoreLabel  = pwrBtn.GetComponentInChildren<TextMeshProUGUI>();
         
-        upg.buyAssemblyBtn     = asmSpwnBtn.GetComponent<Button>();
-        upg.buyPaintBtn        = pntSpwnBtn.GetComponent<Button>();
-        upg.buyAssemblyLabel   = asmSpwnBtn.GetComponentInChildren<TextMeshProUGUI>();
-        upg.buyPaintLabel      = pntSpwnBtn.GetComponentInChildren<TextMeshProUGUI>();
+        upg.assemblyButtons = new Button[] { asmSpwnBtn.GetComponent<Button>() };
+        upg.paintButtons    = new Button[] { pntSpwnBtn.GetComponent<Button>() };
+        upg.assemblyLabels  = new TextMeshProUGUI[] { asmSpwnBtn.GetComponentInChildren<TextMeshProUGUI>() };
+        upg.paintLabels     = new TextMeshProUGUI[] { pntSpwnBtn.GetComponentInChildren<TextMeshProUGUI>() };
     }
 
     // ═══════════════════════════════════════════════════════════════════════
