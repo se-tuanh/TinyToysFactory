@@ -41,9 +41,14 @@ public class MachineUI : MonoBehaviour
         }
 
         // Update Machine Name
-        if (machineNameText != null)
+        if (machineNameText != null && machine.assignedProduct != null)
         {
-            machineNameText.text = machine.name; // or machine.assignedProduct.productName
+            string typePrefix = machine.machineType == Machine.MachineType.AssemblyA ? "Ráp" : "Sơn";
+            machineNameText.text = $"{typePrefix}: {machine.assignedProduct.productName}";
+        }
+        else if (machineNameText != null)
+        {
+            machineNameText.text = machine.name;
         }
 
         // Update Progress Bar Visuals

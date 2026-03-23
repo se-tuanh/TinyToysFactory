@@ -34,7 +34,9 @@ public class SetupMachineLabels : EditorWindow
                 textObj.transform.SetParent(canvasObj.transform, false);
                 
                 TextMeshProUGUI tmp = textObj.AddComponent<TextMeshProUGUI>();
-                tmp.text = m.name;
+                string typePrefix = m.machineType == Machine.MachineType.AssemblyA ? "Ráp" : "Sơn";
+                string prodName = m.assignedProduct != null ? m.assignedProduct.productName : "???";
+                tmp.text = $"<b>{typePrefix}: {prodName}</b>";
                 tmp.fontSize = 24;
                 tmp.alignment = TextAlignmentOptions.Center;
                 tmp.color = Color.white;
