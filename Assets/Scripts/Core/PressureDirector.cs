@@ -102,8 +102,8 @@ public class PressureDirector : MonoBehaviour
         // Roll fail chance
         float failRoll = Random.value;
         bool failed = choice.failChance > 0f && failRoll < choice.failChance;
-        Debug.Log($"[PressureDirector] Resolved '{ev.eventName}' via '{choice.choiceLabel}' — " +
-                  $"rollResult={failRoll:F2} vs failChance={choice.failChance:F2} → {(failed ? "FAILED" : "SUCCESS")}");
+        Debug.Log($"[PressureDirector] Resolved '{ev.eventName}' via '{choice.choiceLabel}' - " +
+                  $"rollResult={failRoll:F2} vs failChance={choice.failChance:F2} -> {(failed ? "FAILED" : "SUCCESS")}");
 
         if (failed)
         {
@@ -141,7 +141,7 @@ public class PressureDirector : MonoBehaviour
         CurrentTier = Mathf.Clamp(t, MIN_TIER, MAX_TIER);
         _nextEventTimer = IntervalForTier(CurrentTier);
         OnTierChanged?.Invoke(CurrentTier);
-        Debug.Log($"[PressureDirector] Tier → {CurrentTier}");
+        Debug.Log($"[PressureDirector] Tier -> {CurrentTier}");
     }
 
     private void TriggerRandomEvent()
@@ -150,7 +150,8 @@ public class PressureDirector : MonoBehaviour
         if (_activeEventCount >= maxEvents) { _nextEventTimer = 10f; return; }
 
         // Filter events eligible for current tier
-        var eligible = eventPool.FindAll(e => e.minPressureTier <= CurrentTier);
+        if (eventPool == null) return;
+        var eligible = eventPool.FindAll(e => e != null && e.minPressureTier <= CurrentTier);
         if (eligible.Count == 0) { _nextEventTimer = IntervalForTier(CurrentTier); return; }
 
         // Weighted random pick
@@ -176,7 +177,6 @@ public class PressureDirector : MonoBehaviour
     private IEnumerator TelegraphDelay(RandomEventData ev)
     {
         yield return new WaitForSeconds(ev.telegraphDuration);
-        // Second fire (with telegraph flag) handled by EventPopupUI listener
     }
 
     private IEnumerator GracePeriod(float seconds)

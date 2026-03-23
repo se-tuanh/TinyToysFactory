@@ -64,6 +64,7 @@ public class MachineUI : MonoBehaviour
         machineNameText.fontSize = 24;
         machineNameText.alignment = TextAlignmentOptions.Center;
         machineNameText.color = Color.white;
+        machineNameText.raycastTarget = false; // Important: Don't block clicks!
     }
 
     private void Update()

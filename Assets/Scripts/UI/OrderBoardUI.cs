@@ -84,6 +84,7 @@ public class OrderBoardUI : MonoBehaviour
 
     private void CreatePendingSlot(OrderData order)
     {
+        if (order == null) return;
         if (!pendingSlotPrefab || !pendingContainer) return;
         if (_pendingSlots.ContainsKey(order)) return;
 
@@ -92,16 +93,15 @@ public class OrderBoardUI : MonoBehaviour
 
         // Name
         var nameText = slot.transform.Find("OrderNameText")?.GetComponent<TextMeshProUGUI>();
-        if (nameText) nameText.text = $"📦 {order.orderName}";
+        if (nameText) nameText.text = $"Order: {order.orderName}";
 
         // Required products
         var reqText = slot.transform.Find("RequiredText")?.GetComponent<TextMeshProUGUI>();
         if (reqText)
         {
-            var sb = new System.Text.StringBuilder();
+            reqText.text = "Items: ";
             foreach (var req in order.requiredProducts)
-                sb.AppendLine($"  • {req.product.productName} ×{req.quantity}");
-            reqText.text = sb.ToString().TrimEnd();
+                reqText.text += $"{req.quantity}x {req.product.productName}, ";
         }
 
         // Deadline hint
@@ -110,7 +110,7 @@ public class OrderBoardUI : MonoBehaviour
         {
             int mins = Mathf.FloorToInt(order.baseDeadline / 60f);
             int secs = Mathf.FloorToInt(order.baseDeadline % 60f);
-            hintText.text = $"⏱ Hạn: {mins}:{secs:00}";
+            hintText.text = $"Deadline: {mins}:{secs:00}";
         }
 
         // Accept button
@@ -150,7 +150,7 @@ public class OrderBoardUI : MonoBehaviour
 
         // Name
         var nameText = slot.transform.Find("OrderNameText")?.GetComponent<TextMeshProUGUI>();
-        if (nameText) nameText.text = $"📦 {order.orderName}";
+        if (nameText) nameText.text = $"Order: {order.orderName}";
 
         // Queue button — enqeue production tasks for all required products
         var queueBtn = slot.transform.Find("QueueButton")?.GetComponent<Button>();
@@ -215,8 +215,8 @@ public class OrderBoardUI : MonoBehaviour
                 {
                     int current = ResourceManager.Instance.GetProductCount(req.product);
                     int remaining = OrderManager.Instance.GetRemainingQuantity(order, req.product);
-                    string icon = current >= req.quantity ? "✅" : "⏳";
-                    sb.AppendLine($"  {icon} {req.product.productName}  {current}/{req.quantity}  (còn cần sx: {remaining})");
+                    string status = current >= req.quantity ? "Done" : "Pending";
+                    sb.AppendLine($"  {status} {req.product.productName}  {current}/{req.quantity}  (needed: {remaining})");
                     if (current < req.quantity) allMet = false;
                 }
                 reqText.text = sb.ToString().TrimEnd();
@@ -247,7 +247,7 @@ public class OrderBoardUI : MonoBehaviour
         {
             int mins = Mathf.FloorToInt(remaining / 60f);
             int secs = Mathf.FloorToInt(remaining % 60f);
-            timeText.text = $"⏱ {mins}:{secs:00}";
+            timeText.text = $"Time: {mins}:{secs:00}";
 
             // Urgent blink when < 20%
             bool urgent = remaining / total < 0.2f;

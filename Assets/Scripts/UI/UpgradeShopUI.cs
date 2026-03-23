@@ -51,55 +51,77 @@ public class UpgradeShopUI : MonoBehaviour
 
         // Find Templates (find all unique machines in scene)
 #if UNITY_2022_2_OR_NEWER
-        var allMachines = GameObject.FindObjectsByType<Machine>(FindObjectsSortMode.None);
+        var allMachines = GameObject.FindObjectsByType<Machine>(FindObjectsInactive.Include, FindObjectsSortMode.None);
 #else
-        var allMachines = GameObject.FindObjectsOfType<Machine>();
+        var allMachines = GameObject.FindObjectsOfType<Machine>(true);
 #endif
+        Debug.Log($"[UpgradeShop] Found {allMachines.Length} total machines to use as potential templates.");
         var assemblyList = new List<Machine>();
         var paintList = new List<Machine>();
         var addedProdsA = new HashSet<ProductData>();
-        var addedProdsP = new HashSet<ProductData>();
+        var addedProdsB = new HashSet<ProductData>();
 
-        foreach(var m in allMachines)
+        foreach (var m in allMachines)
         {
-            if (m.machineType == Machine.MachineType.AssemblyA && !addedProdsA.Contains(m.assignedProduct))
+            if (m.machineType == Machine.MachineType.AssemblyA)
             {
-                assemblyList.Add(m);
-                addedProdsA.Add(m.assignedProduct);
+                if (m.assignedProduct != null && !addedProdsA.Contains(m.assignedProduct))
+                {
+                    assemblyList.Add(m);
+                    addedProdsA.Add(m.assignedProduct);
+                }
+                else if (m.assignedProduct == null && assemblyList.Count == 0) // fallback for generic
+                {
+                    assemblyList.Add(m);
+                }
             }
-            else if (m.machineType == Machine.MachineType.PaintPackB && !addedProdsP.Contains(m.assignedProduct))
+            else if (m.machineType == Machine.MachineType.PaintPackB)
             {
-                paintList.Add(m);
-                addedProdsP.Add(m.assignedProduct);
+                if (m.assignedProduct != null && !addedProdsB.Contains(m.assignedProduct))
+                {
+                    paintList.Add(m);
+                    addedProdsB.Add(m.assignedProduct);
+                }
+                else if (m.assignedProduct == null && paintList.Count == 0) // fallback
+                {
+                    paintList.Add(m);
+                }
             }
         }
         _assemblyTemplates = assemblyList.ToArray();
         _paintTemplates = paintList.ToArray();
 
-        // Wire Upgradable Buttons
-        if (workerUpgradeBtn) workerUpgradeBtn.onClick.AddListener(BuyWorker);
-        if (bufferUpgradeBtn) bufferUpgradeBtn.onClick.AddListener(BuyBuffer);
-        if (powerRestoreBtn)  powerRestoreBtn .onClick.AddListener(BuyPower);
+        // Clear and Wire Upgradable Buttons
+        if (workerUpgradeBtn) { workerUpgradeBtn.onClick.RemoveAllListeners(); workerUpgradeBtn.onClick.AddListener(BuyWorker); }
+        if (bufferUpgradeBtn) { bufferUpgradeBtn.onClick.RemoveAllListeners(); bufferUpgradeBtn.onClick.AddListener(BuyBuffer); }
+        if (powerRestoreBtn)  { powerRestoreBtn.onClick.RemoveAllListeners();  powerRestoreBtn.onClick.AddListener(BuyPower); }
         
-        // Loop through provided Machine buttons and wire them
+        // Clear and Loop through provided Machine buttons
         for (int i = 0; i < assemblyButtons.Length; i++)
         {
-            if (i >= _assemblyTemplates.Length || assemblyButtons[i] == null) continue;
+            if (assemblyButtons[i] == null) continue;
+            assemblyButtons[i].onClick.RemoveAllListeners();
+            if (i >= _assemblyTemplates.Length) continue;
+            
             Machine captured = _assemblyTemplates[i];
             assemblyButtons[i].onClick.AddListener(() => BuyMachine(captured));
         }
         for (int i = 0; i < paintButtons.Length; i++)
         {
-            if (i >= _paintTemplates.Length || paintButtons[i] == null) continue;
+            if (paintButtons[i] == null) continue;
+            paintButtons[i].onClick.RemoveAllListeners();
+            if (i >= _paintTemplates.Length) continue;
+            
             Machine captured = _paintTemplates[i];
             paintButtons[i].onClick.AddListener(() => BuyMachine(captured));
         }
 
         // Refresh affordability whenever credits change
         if (GameManager.Instance != null)
+        {
             GameManager.Instance.OnCreditsChanged.AddListener(_ => RefreshButtons());
-            
-        RefreshButtons();
+            RefreshButtons();
+        }
     }
 
     private void Update()
@@ -145,15 +167,26 @@ public class UpgradeShopUI : MonoBehaviour
     private int GetMachineCost(Machine.MachineType type)
     {
         var pm = ProductionManager.Instance;
-        if (pm == null) return 9999;
-        int count = pm.GetMachineStatus().FindAll(m => m.machineType == type).Count;
+        if (pm == null || pm.GetMachineStatus() == null) return 9999;
+        int count = pm.GetMachineStatus().FindAll(m => m != null && m.machineType == type).Count;
         return (type == Machine.MachineType.AssemblyA ? baseAssemblyCost : basePaintCost) + (count * 50);
     }
 
     private void BuyMachine(Machine template)
     {
+        Debug.Log($"[UpgradeShop] Trying to buy machine for template: {(template != null ? template.name : "NULL")}");
+        if (template == null) {
+            Debug.LogError("[UpgradeShop] Cannot buy machine: template is null!");
+            return;
+        }
         int cost = GetMachineCost(template.machineType);
-        if (!GameManager.Instance.SpendCredits(cost)) return;
+        if (GameManager.Instance == null) { Debug.LogError("GameManager.Instance is null!"); return; }
+        
+        if (!GameManager.Instance.SpendCredits(cost)) {
+            Debug.LogWarning($"[UpgradeShop] Not enough credits to buy {template.name}. Need {cost}");
+            return;
+        }
+        
         SpawnMachine(template, template.machineType);
         RefreshButtons();
     }
@@ -161,16 +194,43 @@ public class UpgradeShopUI : MonoBehaviour
     private void SpawnMachine(Machine template, Machine.MachineType type)
     {
         var pm = ProductionManager.Instance;
-        int count = pm.GetMachineStatus().FindAll(m => m.machineType == type).Count;
+        if (pm == null || pm.GetMachineStatus() == null) {
+            Debug.LogError("[UpgradeShop] ProductionManager not ready!");
+            return;
+        }
+
+        // 1. Find the lowest Y among existing ACTIVE machines of the same type to stack below them
+        // If none are active, use default column positions from SceneBuilder.
+        var allMachines = pm.GetMachineStatus();
+        float startX = (type == Machine.MachineType.AssemblyA) ? -6.5f : -0.5f;
+        float lowestY = (type == Machine.MachineType.AssemblyA) ? 2.5f : -2.5f;
+        int activeInCol = 0;
+
+        foreach (var m in allMachines)
+        {
+            if (m != null && m.gameObject.activeInHierarchy && m.machineType == type)
+            {
+                if (m.transform.position.y < lowestY) lowestY = m.transform.position.y;
+                activeInCol++;
+            }
+        }
+
+        if (template == null || template.gameObject == null) return;
         
+        // 2. Instantiate and Activate
         var newObj = Instantiate(template.gameObject, template.transform.parent);
-        newObj.transform.position = template.transform.position + new Vector3(0, -1.35f * count, 0);
-        newObj.name = $"{template.gameObject.name}_{count + 1}";
+        newObj.SetActive(true); // CRITICAL: Templates for Robot/Doll are inactive!
+        
+        // 3. Position below the lowest active machine in the column
+        float spawnY = (activeInCol > 0) ? (lowestY - 1.35f) : lowestY;
+        newObj.transform.position = new Vector3(startX, spawnY, 0);
+        newObj.name = $"{template.gameObject.name}_Purchased_{activeInCol + 1}";
         
         var newMachine = newObj.GetComponent<Machine>();
+        // Ensure new machine starts fresh without inherited worker state if any
         if (newMachine != null && newMachine.HasWorker) newMachine.ToggleWorker();
         
-        Debug.Log($"[UpgradeShop] Purchased new {type} machine!");
+        Debug.Log($"[UpgradeShop] Purchased and Activated new {type} machine: {newObj.name} at {newObj.transform.position}");
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
@@ -185,7 +245,7 @@ public class UpgradeShopUI : MonoBehaviour
         
         SetLabel(workerUpgradeLabel, $"+1 Worker\n${workerUpgradeCost}");
         SetLabel(bufferUpgradeLabel, $"+2 Buffer\n${bufferUpgradeCost}");
-        SetLabel(powerRestoreLabel,  $"⚡ Power +{powerRestoreAmount}\n${powerRestoreCost}");
+        SetLabel(powerRestoreLabel,  $"Power +{powerRestoreAmount}\n${powerRestoreCost}");
 
         // Refresh Dynamic Assembly Buttons
         for (int i = 0; i < assemblyButtons.Length; i++)
@@ -201,8 +261,9 @@ public class UpgradeShopUI : MonoBehaviour
             int cost = GetMachineCost(Machine.MachineType.AssemblyA);
             SetInteractable(assemblyButtons[i], credits >= cost);
             
-            string prodName = template.assignedProduct != null ? template.assignedProduct.productName : "Machine";
-            if (i < assemblyLabels.Length) SetLabel(assemblyLabels[i], $"+1 Ráp {prodName}\n${cost}");
+            string prodName = (template != null && template.assignedProduct != null) ? template.assignedProduct.productName : "Machine";
+            if (assemblyLabels != null && i < assemblyLabels.Length && assemblyLabels[i] != null) 
+                SetLabel(assemblyLabels[i], $"+1 Ráp {prodName}\n${cost}");
         }
 
         // Refresh Dynamic Paint Buttons
@@ -219,8 +280,9 @@ public class UpgradeShopUI : MonoBehaviour
             int cost = GetMachineCost(Machine.MachineType.PaintPackB);
             SetInteractable(paintButtons[i], credits >= cost);
             
-            string prodName = template.assignedProduct != null ? template.assignedProduct.productName : "Machine";
-            if (i < paintLabels.Length) SetLabel(paintLabels[i], $"+1 Sơn {prodName}\n${cost}");
+            string prodName = (template != null && template.assignedProduct != null) ? template.assignedProduct.productName : "Machine";
+            if (paintLabels != null && i < paintLabels.Length && paintLabels[i] != null) 
+                SetLabel(paintLabels[i], $"+1 Sơn {prodName}\n${cost}");
         }
     }
 

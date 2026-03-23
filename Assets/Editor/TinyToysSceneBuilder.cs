@@ -5,6 +5,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
 using System.Collections.Generic;
+using System.Linq;
 
 public class TinyToysSceneBuilder : EditorWindow
 {
@@ -120,6 +121,50 @@ public class TinyToysSceneBuilder : EditorWindow
         pd.eventPool = new List<RandomEventData>();
         foreach (var g in AssetDatabase.FindAssets("t:RandomEventData", new[]{"Assets/ScriptableObjects/Events"}))
             pd.eventPool.Add(AssetDatabase.LoadAssetAtPath<RandomEventData>(AssetDatabase.GUIDToAssetPath(g)));
+        
+        var factoryRoot = GameObject.Find("[FactoryMap]");
+        if (factoryRoot == null) factoryRoot = new GameObject("[FactoryMap]");
+
+        // Find Products
+        var products = AssetDatabase.FindAssets("t:ProductData", new[] { "Assets/ScriptableObjects/Products" })
+            .Select(guid => AssetDatabase.LoadAssetAtPath<ProductData>(AssetDatabase.GUIDToAssetPath(guid)))
+            .ToList();
+
+        var car   = products.FirstOrDefault(p => p.productName.Contains("Car"));
+        var robot = products.FirstOrDefault(p => p.productName.Contains("Robot"));
+        var doll  = products.FirstOrDefault(p => p.productName.Contains("Doll"));
+
+        if (car != null)
+        {
+            var mA = MachinePrefab("MachineA_Car", Machine.MachineType.AssemblyA,  new Vector3(-6.5f,  2.5f, 0f), MachineA);
+            var mB = MachinePrefab("MachineB_Car", Machine.MachineType.PaintPackB, new Vector3(-0.5f, -2.5f, 0f), MachineB);
+            mA.GetComponent<Machine>().assignedProduct = car;
+            mB.GetComponent<Machine>().assignedProduct = car;
+            mA.transform.SetParent(factoryRoot.transform);
+            mB.transform.SetParent(factoryRoot.transform);
+        }
+        
+        // Templates (Hidden) for Robot and Doll
+        if (robot != null)
+        {
+            var tA = MachinePrefab("TemplateA_Robot", Machine.MachineType.AssemblyA,  new Vector3(12, 12, 0), MachineA);
+            var tB = MachinePrefab("TemplateB_Robot", Machine.MachineType.PaintPackB, new Vector3(14, 12, 0), MachineB);
+            tA.GetComponent<Machine>().assignedProduct = robot;
+            tB.GetComponent<Machine>().assignedProduct = robot;
+            tA.SetActive(false); tB.SetActive(false);
+            tA.transform.SetParent(factoryRoot.transform);
+            tB.transform.SetParent(factoryRoot.transform);
+        }
+        if (doll != null)
+        {
+            var tA = MachinePrefab("TemplateA_Doll", Machine.MachineType.AssemblyA,  new Vector3(12, 14, 0), MachineA);
+            var tB = MachinePrefab("TemplateB_Doll", Machine.MachineType.PaintPackB, new Vector3(14, 14, 0), MachineB);
+            tA.GetComponent<Machine>().assignedProduct = doll;
+            tB.GetComponent<Machine>().assignedProduct = doll;
+            tA.SetActive(false); tB.SetActive(false);
+            tA.transform.SetParent(factoryRoot.transform);
+            tB.transform.SetParent(factoryRoot.transform);
+        }
     }
 
     // ── Factory ───────────────────────────────────────────────────────────
@@ -130,17 +175,8 @@ public class TinyToysSceneBuilder : EditorWindow
         AssetDatabase.ImportAsset("Assets/Sprites/paint.png", ImportAssetOptions.ForceUpdate);
 
         var root = new GameObject("[FactoryMap]");
-        var mA = MachinePrefab("MachineA_Assembly", Machine.MachineType.AssemblyA, new Vector3(-6.5f, 2.5f, 0f), MachineA);
-        var mB = MachinePrefab("MachineB_Paint",    Machine.MachineType.PaintPackB, new Vector3(-0.5f, -2.5f, 0f),  MachineB);
-        mA.transform.SetParent(root.transform);
-        mB.transform.SetParent(root.transform);
-        var car = AssetDatabase.LoadAssetAtPath<ProductData>("Assets/ScriptableObjects/Products/Product_ToyCar.asset");
-        if (car != null)
-        {
-            mA.GetComponent<Machine>().assignedProduct = car;
-            mB.GetComponent<Machine>().assignedProduct = car;
-        }
-        else Debug.LogWarning("[SceneBuilder] Product_ToyCar not found — run Generate Starter Data first!");
+        // Machines are now created in MakeManagers() as templates or initial machines.
+        // This section is intentionally left empty as per the new design.
     }
 
     // ── Workers ───────────────────────────────────────────────────────────
@@ -257,6 +293,14 @@ public class TinyToysSceneBuilder : EditorWindow
         uim.winPanel           = winPanel;
         uim.losePanel          = losePanel;
         uim.winCreditsText     = winCredTxt;
+        uim.tabRow = hud; // hud is the root for Timer, ResPanel, OrderBoardPanel, etc.
+        var toggle = Btn("ToggleHUD", cvGO, "[ - ]", new Color(0.2f, 0.2f, 0.3f));
+        // Force the toggle to be at the front and clickable
+        toggle.GetComponent<Image>().raycastTarget = true;
+        toggle.GetComponent<Button>().onClick.AddListener(() => uim.ToggleHUD());
+        Anch(toggle, 0.5f, 0f, 0.5f, 0f); Pos(toggle, 0, 15); Size(toggle, 60, 30);
+        uim.hudToggleText = toggle.GetComponentInChildren<TextMeshProUGUI>();
+
         uim.pauseButton        = pauseBtn.GetComponent<Button>();
         uim.emergencyBuyButton = emergBtn.GetComponent<Button>();
 
@@ -358,14 +402,33 @@ public class TinyToysSceneBuilder : EditorWindow
         tut.skipButton       = tutSkip.GetComponent<Button>();
 
         // ── Upgrade Shop Panel ────────────────────────────────────────────
-        var shopPanel    = Panel("UpgradeShopPanel", cvGO, 0.20f, 0.15f, 0.80f, 0.85f, new Color(0.05f, 0.08f, 0.18f, 0.95f));
+        var shopPanel    = Panel("UpgradeShopPanel", cvGO, 0.20f, 0.15f, 0.80f, 0.85f, new Color(0.05f, 0.08f, 0.18f, 0.95f), true);
         var shopTitle    = TMP("ShopTitle", shopPanel, "Upgrade Shop  [Tab]", 22, UI_Orange, TextAlignmentOptions.Center); Anch(shopTitle.gameObject, 0f, 0.88f, 1f, 1f);
-        var wrkBtn       = Btn("WrkUpgradeBtn",   shopPanel, "+1 Worker\n$80",     UI_Blue);  Anch(wrkBtn,  0.04f, 0.55f, 0.32f, 0.86f);
-        var bufBtn       = Btn("BufUpgradeBtn",   shopPanel, "+2 Buffer\n$60",     UI_Green); Anch(bufBtn,  0.36f, 0.55f, 0.64f, 0.86f);
-        var pwrBtn       = Btn("PwrRestoreBtn",   shopPanel, "Power +50\n$40", UI_Orange); Anch(pwrBtn,  0.68f, 0.55f, 0.96f, 0.86f);
         
-        var asmSpwnBtn   = Btn("BuyAsmBtn", shopPanel, "+1 Assembly\n$250", UI_Blue);  Anch(asmSpwnBtn, 0.15f, 0.15f, 0.45f, 0.45f);
-        var pntSpwnBtn   = Btn("BuyPntBtn", shopPanel, "+1 Paint\n$350",   UI_Green); Anch(pntSpwnBtn, 0.55f, 0.15f, 0.85f, 0.45f);
+        // Row 1: General Upgrades
+        var wrkBtn       = Btn("WrkUpgradeBtn",   shopPanel, "+1 Thợ\n$80",     UI_Blue);  Anch(wrkBtn,  0.04f, 0.65f, 0.32f, 0.86f);
+        var bufBtn       = Btn("BufUpgradeBtn",   shopPanel, "+2 Buffer\n$60",     UI_Green); Anch(bufBtn,  0.36f, 0.65f, 0.64f, 0.86f);
+        var pwrBtn       = Btn("PwrRestoreBtn",   shopPanel, "Hồi Điện\n$40", UI_Orange); Anch(pwrBtn,  0.68f, 0.65f, 0.96f, 0.86f);
+        
+        // Row 2: Assembly Machines (Horizontal layout for up to 3)
+        var asmButtons = new Button[3];
+        var asmLabels  = new TextMeshProUGUI[3];
+        for (int i = 0; i < 3; i++) {
+            var btnGo = Btn($"BuyAsmBtn_{i}", shopPanel, "+1 Ráp\n$250", UI_Blue);
+            Anch(btnGo, 0.04f + i*0.32f, 0.35f, 0.32f + i*0.32f, 0.56f);
+            asmButtons[i] = btnGo.GetComponent<Button>();
+            asmLabels[i]  = btnGo.GetComponentInChildren<TextMeshProUGUI>();
+        }
+
+        // Row 3: Paint Machines (Horizontal layout for up to 3)
+        var pntButtons = new Button[3];
+        var pntLabels  = new TextMeshProUGUI[3];
+        for (int i = 0; i < 3; i++) {
+            var btnGo = Btn($"BuyPntBtn_{i}", shopPanel, "+1 Sơn\n$350", UI_Green);
+            Anch(btnGo, 0.04f + i*0.32f, 0.05f, 0.32f + i*0.32f, 0.26f);
+            pntButtons[i] = btnGo.GetComponent<Button>();
+            pntLabels[i]  = btnGo.GetComponentInChildren<TextMeshProUGUI>();
+        }
 
         var shopToggleBtn = Btn("ShopToggleHUDBtn", hud, "Shop [Tab]", new Color(0.15f,0.20f,0.38f)); Anch(shopToggleBtn, 0.92f, 0.07f, 0.99f, 0.12f);
         shopPanel.SetActive(false);
@@ -379,10 +442,10 @@ public class TinyToysSceneBuilder : EditorWindow
         upg.bufferUpgradeLabel = bufBtn.GetComponentInChildren<TextMeshProUGUI>();
         upg.powerRestoreLabel  = pwrBtn.GetComponentInChildren<TextMeshProUGUI>();
         
-        upg.assemblyButtons = new Button[] { asmSpwnBtn.GetComponent<Button>() };
-        upg.paintButtons    = new Button[] { pntSpwnBtn.GetComponent<Button>() };
-        upg.assemblyLabels  = new TextMeshProUGUI[] { asmSpwnBtn.GetComponentInChildren<TextMeshProUGUI>() };
-        upg.paintLabels     = new TextMeshProUGUI[] { pntSpwnBtn.GetComponentInChildren<TextMeshProUGUI>() };
+        upg.assemblyButtons = asmButtons;
+        upg.paintButtons    = pntButtons;
+        upg.assemblyLabels  = asmLabels;
+        upg.paintLabels     = pntLabels;
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -474,35 +537,48 @@ public class TinyToysSceneBuilder : EditorWindow
         if (parent) go.transform.SetParent(parent.transform, false);
         return go;
     }
-    static GameObject Panel(string n, GameObject parent, float x0,float y0,float x1,float y1, Color? col=null) {
+    static GameObject Panel(string n, GameObject parent, float x0,float y0,float x1,float y1, Color? col=null, bool raycast = false) {
         var go = Rect(n,parent); Anch(go,x0,y0,x1,y1);
         var img = go.AddComponent<Image>(); img.color = col ?? UI_Bg;
+        img.raycastTarget = raycast;
         return go;
     }
     static TextMeshProUGUI TMP(string n, GameObject parent, string txt, int fs, Color col, TextAlignmentOptions align=TextAlignmentOptions.Left) {
         var go = Rect(n,parent);
         var t = go.AddComponent<TextMeshProUGUI>();
         t.text = txt; t.fontSize = fs; t.color = col; t.alignment = align;
+        t.raycastTarget = false; // Labels shouldn't block world clicks
         return t;
     }
     static Image Img(string n, GameObject parent, Color col) {
         var go = Rect(n,parent);
         var img = go.AddComponent<Image>(); img.color = col;
+        img.raycastTarget = false; // Images shouldn't block world clicks
         return img;
     }
     static GameObject Btn(string n, GameObject parent, string label, Color col) {
         var go = Rect(n,parent);
         var img = go.AddComponent<Image>(); img.color = col;
+        img.raycastTarget = true; // Buttons MUST be clickable!
         go.AddComponent<Button>();
         var lblGO = Rect("Label",go); Anch(lblGO,0.05f,0.1f,0.95f,0.9f);
         var t = lblGO.AddComponent<TextMeshProUGUI>();
         t.text = label; t.fontSize = 14; t.color = Color.white; t.alignment = TextAlignmentOptions.Center;
+        t.raycastTarget = false; // Labels shouldn't block button clicks
         return go;
     }
     static void Anch(GameObject go, float x0,float y0,float x1,float y1) {
         var r = go.GetComponent<RectTransform>();
         r.anchorMin = new Vector2(x0,y0); r.anchorMax = new Vector2(x1,y1);
         r.offsetMin = r.offsetMax = Vector2.zero;
+    }
+    static void Pos(GameObject go, float x, float y) {
+        var r = go.GetComponent<RectTransform>();
+        if (r) r.anchoredPosition = new Vector2(x, y);
+    }
+    static void Size(GameObject go, float w, float h) {
+        var r = go.GetComponent<RectTransform>();
+        if (r) r.sizeDelta = new Vector2(w, h);
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -632,7 +708,7 @@ public class TinyToysSceneBuilder : EditorWindow
         var reqTxt = TMP("RequiredText", root, "  • Toy ×1", 11, Color.white, TextAlignmentOptions.Left);
         Anch(reqTxt.gameObject, 0.04f, 0.35f, 0.75f, 0.72f);
 
-        var hintTxt = TMP("DeadlineHintText", root, "⏱ Hạn: 3:00", 10, new Color(0.6f, 0.85f, 1f), TextAlignmentOptions.Left);
+        var hintTxt = TMP("DeadlineHintText", root, "Trễ nhất: 3:00", 10, new Color(0.6f, 0.85f, 1f), TextAlignmentOptions.Left);
         Anch(hintTxt.gameObject, 0.04f, 0.10f, 0.60f, 0.35f);
 
         var acceptBtn = Btn("AcceptButton", root, "Accept", UI_Green);
@@ -665,7 +741,7 @@ public class TinyToysSceneBuilder : EditorWindow
         var nameTxt = TMP("OrderNameText", root, "Order Name", 13, UI_Orange, TextAlignmentOptions.TopLeft);
         Anch(nameTxt.gameObject, 0.04f, 0.78f, 0.96f, 0.98f);
 
-        var reqTxt = TMP("RequiredText", root, "  ⏳ Toy  0/1", 10, Color.white, TextAlignmentOptions.Left);
+        var reqTxt = TMP("RequiredText", root, "  ... Toy  0/1", 10, Color.white, TextAlignmentOptions.Left);
         Anch(reqTxt.gameObject, 0.04f, 0.42f, 0.70f, 0.78f);
 
         // Deadline bar background
@@ -681,13 +757,13 @@ public class TinyToysSceneBuilder : EditorWindow
         barFill.fillMethod = Image.FillMethod.Horizontal;
         barFill.fillAmount = 1f;
 
-        var timeTxt = TMP("DeadlineText", root, "⏱ 3:00", 10, Color.white, TextAlignmentOptions.Right);
+        var timeTxt = TMP("DeadlineText", root, "Hạn: 3:00", 10, Color.white, TextAlignmentOptions.Right);
         Anch(timeTxt.gameObject, 0.50f, 0.10f, 0.96f, 0.26f);
 
-        var queueBtn = Btn("QueueButton", root, "📋 Produce", UI_Orange);
+        var queueBtn = Btn("QueueButton", root, "Sản xuất", UI_Orange);
         Anch(queueBtn, 0.04f, 0.06f, 0.46f, 0.27f);
-
-        var deliverBtn = Btn("DeliverButton", root, "Deliver ✅", UI_Blue);
+        
+        var deliverBtn = Btn("DeliverButton", root, "Giao [OK]", UI_Blue);
         Anch(deliverBtn, 0.50f, 0.42f, 0.96f, 0.80f);
 
         var le = root.AddComponent<UnityEngine.UI.LayoutElement>();

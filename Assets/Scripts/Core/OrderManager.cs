@@ -71,7 +71,7 @@ public class OrderManager : MonoBehaviour
 
         int limit = config ? config.maxActiveOrders : _maxActive;
 
-        if (!_pending.Contains(newOrder) && !_active.Exists(a => a.order == newOrder))
+        if (newOrder != null && !_pending.Contains(newOrder) && !_active.Exists(a => a.order == newOrder))
         {
             _pending.Add(newOrder);
             OnPendingOrdersChanged?.Invoke();

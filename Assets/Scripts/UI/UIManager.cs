@@ -49,6 +49,11 @@ public class UIManager : MonoBehaviour
     public Button pauseButton;
     public Button emergencyBuyButton;
 
+    [Header("HUD Toggling")]
+    public GameObject      tabRow;
+    public TextMeshProUGUI hudToggleText;
+    private bool           _hudHidden;
+
     // ── Lifecycle ─────────────────────────────────────────────────────────
     private float _totalTime;
 
@@ -157,5 +162,12 @@ public class UIManager : MonoBehaviour
             if (paintFillBar) paintFillBar.color = new Color(0.95f, 0.65f, 0.90f);
             yield return new WaitForSecondsRealtime(0.18f);
         }
+    }
+
+    public void ToggleHUD()
+    {
+        _hudHidden = !_hudHidden;
+        if (tabRow) tabRow.SetActive(!_hudHidden);
+        if (hudToggleText) hudToggleText.text = _hudHidden ? "[ + ]" : "[ - ]";
     }
 }
